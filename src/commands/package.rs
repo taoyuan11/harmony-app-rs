@@ -73,8 +73,9 @@ pub fn run<R: CommandRunner, W: Write>(
             });
         }
         if build_plan.legacy_shared_destination.exists() {
-            fs::remove_file(&build_plan.legacy_shared_destination)
-                .map_err(|source| HarmonyAppError::io(&build_plan.legacy_shared_destination, source))?;
+            fs::remove_file(&build_plan.legacy_shared_destination).map_err(|source| {
+                HarmonyAppError::io(&build_plan.legacy_shared_destination, source)
+            })?;
         }
         if let Some(parent) = build_plan.destination.parent() {
             fs::create_dir_all(parent).map_err(|source| HarmonyAppError::io(parent, source))?;
@@ -102,7 +103,7 @@ pub fn run<R: CommandRunner, W: Write>(
 
     writeln!(
         stdout,
-        "Packaged HarmonyOS {} at {}",
+        "Packaged OHOS {} at {}",
         artifact_label(command.artifact),
         artifact.display()
     )?;
@@ -110,10 +111,7 @@ pub fn run<R: CommandRunner, W: Write>(
 }
 
 fn describe_init(_command: &InitCommand, app: &AppContext) -> String {
-    format!(
-        "generate HarmonyOS shell at {}",
-        app.config.output_dir.display()
-    )
+    format!("generate OHOS shell at {}", app.config.output_dir.display())
 }
 
 fn find_artifact(root: &Path, artifact: PackageArtifact) -> Option<PathBuf> {

@@ -62,9 +62,9 @@ impl AppContext {
             target
         } else if let Some(abi) = common.abi {
             abi_to_target(abi.as_str())?.to_string()
-        } else if let Some(target) = env::var("HARMONY_APP_TARGET").ok() {
+        } else if let Some(target) = env_var_any(&["OHOS_APP_TARGET", "HARMONY_APP_TARGET"]) {
             target
-        } else if let Some(abi) = env::var("HARMONY_APP_ABI").ok() {
+        } else if let Some(abi) = env_var_any(&["OHOS_APP_ABI", "HARMONY_APP_ABI"]) {
             abi_to_target(&abi)?.to_string()
         } else if let Some(target) = file_config.target.clone() {
             target
@@ -81,15 +81,13 @@ impl AppContext {
             file_config
                 .profile
                 .clone()
-                .or_else(|| env::var("HARMONY_APP_PROFILE").ok())
+                .or_else(|| env_var_any(&["OHOS_APP_PROFILE", "HARMONY_APP_PROFILE"]))
                 .unwrap_or_else(|| "debug".to_string())
         };
 
         let output_dir = resolve_output_dir(
             common.out_dir.as_ref(),
-            env::var_os("HARMONY_APP_OUTPUT_DIR")
-                .map(PathBuf::from)
-                .as_ref(),
+            env_path_any(&["OHOS_APP_OUTPUT_DIR", "HARMONY_APP_OUTPUT_DIR"]).as_ref(),
             file_config.output_dir.as_ref(),
             &project.project_dir,
         );
@@ -98,38 +96,40 @@ impl AppContext {
         let module_name = common
             .module_name
             .clone()
-            .or_else(|| env::var("HARMONY_APP_MODULE_NAME").ok())
+            .or_else(|| env_var_any(&["OHOS_APP_MODULE_NAME", "HARMONY_APP_MODULE_NAME"]))
             .or_else(|| file_config.module_name.clone())
             .unwrap_or_else(|| "entry".to_string());
         let bundle_name = common
             .bundle_name
             .clone()
-            .or_else(|| env::var("HARMONY_APP_BUNDLE_NAME").ok())
+            .or_else(|| env_var_any(&["OHOS_APP_BUNDLE_NAME", "HARMONY_APP_BUNDLE_NAME"]))
             .or_else(|| file_config.bundle_name.clone())
             .unwrap_or(default_bundle_name);
 
         let deveco_studio_dir = common
             .deveco_studio_dir
             .clone()
-            .or_else(|| env::var_os("HARMONY_APP_DEVECOSTUDIO_DIR").map(PathBuf::from))
+            .or_else(|| {
+                env_path_any(&["OHOS_APP_DEVECOSTUDIO_DIR", "HARMONY_APP_DEVECOSTUDIO_DIR"])
+            })
             .or(file_config.deveco_studio_dir.clone())
             .unwrap_or_else(|| PathBuf::from(DEFAULT_DEV_ECO_STUDIO_DIR));
         let ohpm_path = common
             .ohpm_path
             .clone()
-            .or_else(|| env::var_os("HARMONY_APP_OHPM_PATH").map(PathBuf::from))
+            .or_else(|| env_path_any(&["OHOS_APP_OHPM_PATH", "HARMONY_APP_OHPM_PATH"]))
             .or(file_config.ohpm_path.clone())
             .unwrap_or_else(|| PathBuf::from(DEFAULT_OHPM_PATH));
         let sdk_root = common
             .sdk_root
             .clone()
-            .or_else(|| env::var_os("HARMONY_APP_SDK_ROOT").map(PathBuf::from))
+            .or_else(|| env_path_any(&["OHOS_APP_SDK_ROOT", "HARMONY_APP_SDK_ROOT"]))
             .or(file_config.sdk_root.clone())
             .unwrap_or_else(|| PathBuf::from(DEFAULT_SDK_ROOT));
         let sdk_version = common
             .sdk_version
             .clone()
-            .or_else(|| env::var("HARMONY_APP_SDK_VERSION").ok())
+            .or_else(|| env_var_any(&["OHOS_APP_SDK_VERSION", "HARMONY_APP_SDK_VERSION"]))
             .or(file_config.sdk_version.clone());
 
         let sdk = discover_sdk(&sdk_root, sdk_version.as_deref())?;
@@ -159,7 +159,7 @@ fn resolve_manifest_path(common: &CommonArgs, cwd: &Path) -> Result<PathBuf> {
     let path = common
         .manifest_path
         .clone()
-        .or_else(|| env::var_os("HARMONY_APP_MANIFEST_PATH").map(PathBuf::from))
+        .or_else(|| env_path_any(&["OHOS_APP_MANIFEST_PATH", "HARMONY_APP_MANIFEST_PATH"]))
         .unwrap_or_else(|| cwd.join("Cargo.toml"));
     if path.exists() {
         Ok(path)
@@ -169,9 +169,12 @@ fn resolve_manifest_path(common: &CommonArgs, cwd: &Path) -> Result<PathBuf> {
 }
 
 fn load_file_config(project_dir: &Path) -> Result<FileConfig> {
-    let path = project_dir.join("harmony-app.toml");
+    let mut path = project_dir.join("ohos-app.toml");
     if !path.exists() {
-        return Ok(FileConfig::default());
+        path = project_dir.join("harmony-app.toml");
+        if !path.exists() {
+            return Ok(FileConfig::default());
+        }
     }
     let text = fs::read_to_string(&path).map_err(|source| HarmonyAppError::ConfigRead {
         path: path.clone(),
@@ -190,12 +193,22 @@ fn resolve_output_dir(
         .cloned()
         .or_else(|| env.cloned())
         .or_else(|| file.cloned())
-        .unwrap_or_else(|| PathBuf::from("harmony-app"));
+        .unwrap_or_else(|| PathBuf::from("ohos-app"));
     if candidate.is_absolute() {
         candidate
     } else {
         project_dir.join(candidate)
     }
+}
+
+fn env_var_any(names: &[&str]) -> Option<String> {
+    names.iter().find_map(|name| env::var(name).ok())
+}
+
+fn env_path_any(names: &[&str]) -> Option<PathBuf> {
+    names
+        .iter()
+        .find_map(|name| env::var_os(name).map(PathBuf::from))
 }
 
 fn default_bundle_name(package_name: &str) -> String {
@@ -215,7 +228,7 @@ mod tests {
     fn reads_flat_configuration_file() {
         let temp = TempDir::new().unwrap();
         fs::write(
-            temp.path().join("harmony-app.toml"),
+            temp.path().join("ohos-app.toml"),
             r#"
 deveco_studio_dir = "D:\\Apps\\code\\DevEco Studio"
 sdk_root = "C:\\Users\\25422\\AppData\\Local\\OpenHarmony\\Sdk"
@@ -228,5 +241,18 @@ module_name = "entry"
         let file_config = load_file_config(temp.path()).unwrap();
         assert_eq!(file_config.sdk_version.as_deref(), Some("20"));
         assert_eq!(file_config.bundle_name.as_deref(), Some("com.example.demo"));
+    }
+
+    #[test]
+    fn falls_back_to_legacy_configuration_file_name() {
+        let temp = TempDir::new().unwrap();
+        fs::write(
+            temp.path().join("harmony-app.toml"),
+            r#"sdk_version = "20""#,
+        )
+        .unwrap();
+
+        let file_config = load_file_config(temp.path()).unwrap();
+        assert_eq!(file_config.sdk_version.as_deref(), Some("20"));
     }
 }

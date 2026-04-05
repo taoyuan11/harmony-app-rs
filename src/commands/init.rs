@@ -19,7 +19,7 @@ pub fn run<R: CommandRunner, W: Write>(
     if command.common.dry_run {
         writeln!(
             stdout,
-            "[dry-run] would generate HarmonyOS shell at {} for bundle {}",
+            "[dry-run] would generate OHOS shell at {} for bundle {}",
             app.config.output_dir.display(),
             context.bundle_name
         )?;
@@ -29,7 +29,7 @@ pub fn run<R: CommandRunner, W: Write>(
     write_shell_project(&app)?;
     writeln!(
         stdout,
-        "Generated HarmonyOS shell at {} using SDK {} ({})",
+        "Generated OHOS shell at {} using SDK {} ({})",
         app.config.output_dir.display(),
         app.config.sdk_root.display(),
         app.config

@@ -1,1 +1,0 @@
-D:\Project\Rust\libs\harmony-app\examples\counter-native\harmony-app\entry\src\main\cpp\CMakeLists.txt

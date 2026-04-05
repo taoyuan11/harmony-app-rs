@@ -1,7 +1,0 @@
-# ninja log v6
-2	247	7970796313589643	CMakeFiles/entry.dir/napi_init.cpp.o	ceed187305c36511
-4	76	7970796771511780	D:/Project/Rust/libs/harmony-app/examples/counter-native/harmony-app/entry/build/default/intermediates/cmake/default/obj/arm64-v8a/libentry.so	dec3efef6fdbbcdd
-1	79	7970797281353137	build.ninja	537ccefb1604eafe
-1	8	7970797254332550	clean	b9a5facf98c4236d
-3	45	7970797281954799	CMakeFiles/entry.dir/napi_init.cpp.o	ceed187305c36511
-46	118	7970797282381965	out/libentry.so	2d5ef89af2b13ca1

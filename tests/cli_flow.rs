@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use harmony_app::{HarmonyAppError, Result, run_with};
+use ohos_app::{HarmonyAppError, OhosAppError, Result, run_with};
 use tempfile::TempDir;
 
-use harmony_app::runner::{CommandRunner, CommandSpec};
+use ohos_app::runner::{CommandRunner, CommandSpec};
 
 #[derive(Default)]
 struct RecordingRunner {
@@ -29,7 +29,7 @@ impl CommandRunner for RecordingRunner {
 }
 
 #[test]
-fn init_generates_harmony_shell_structure() {
+fn init_generates_ohos_shell_structure() {
     let fixture = TestFixture::new();
     let mut runner = RecordingRunner::default();
     let mut stdout = Vec::new();
@@ -87,7 +87,7 @@ fn package_dry_run_lists_full_sequence() {
     .unwrap();
 
     let output = String::from_utf8(stdout).unwrap();
-    assert!(output.contains("generate HarmonyOS shell"));
+    assert!(output.contains("generate OHOS shell"));
     assert!(output.contains("cargo rustc --lib"));
     assert!(output.contains("ohpm.bat install"));
     assert!(output.contains("hvigorw.bat clean assembleHap --no-daemon"));
@@ -149,7 +149,7 @@ fn package_surfaces_ohpm_failure() {
     )
     .unwrap_err();
 
-    assert!(matches!(error, HarmonyAppError::CommandFailed { .. }));
+    assert!(matches!(error, OhosAppError::CommandFailed { .. }));
 }
 
 struct TestFixture {
@@ -182,7 +182,7 @@ impl TestFixture {
     }
 
     fn common_args<const N: usize>(&self, tail: [&str; N]) -> Vec<String> {
-        let mut args = vec!["cargo-harmony-app".to_string()];
+        let mut args = vec!["cargo-ohos-app".to_string()];
         args.extend(tail.into_iter().map(ToString::to_string));
         args.push("--manifest-path".to_string());
         args.push(
@@ -202,7 +202,7 @@ impl TestFixture {
     }
 
     fn output_dir(&self) -> PathBuf {
-        self.project_dir.path().join("harmony-app")
+        self.project_dir.path().join("ohos-app")
     }
 
     fn seed_built_library(&self) {
@@ -210,9 +210,9 @@ impl TestFixture {
             .project_dir
             .path()
             .join("target")
-        .join("aarch64-unknown-linux-ohos")
-        .join("debug")
-        .join("libcounter_native.a");
+            .join("aarch64-unknown-linux-ohos")
+            .join("debug")
+            .join("libcounter_native.a");
         if let Some(parent) = artifact.parent() {
             fs::create_dir_all(parent).unwrap();
         }
@@ -241,12 +241,12 @@ crate-type = ["cdylib", "staticlib"]
 static MESSAGE: &[u8] = b"Hello!\0";
 
 #[unsafe(no_mangle)]
-pub extern "C" fn harmony_app_get_message() -> *const c_char {
+        pub extern "C" fn ohos_app_get_message() -> *const c_char {
     MESSAGE.as_ptr().cast()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn harmony_app_increment_counter() -> u32 {
+        pub extern "C" fn ohos_app_increment_counter() -> u32 {
     1
 }
 "#,

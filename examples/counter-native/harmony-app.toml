@@ -1,4 +1,0 @@
-bundle_name = "com.example.counternative"
-module_name = "entry"
-target = "aarch64-unknown-linux-ohos"
-output_dir = "harmony-app"

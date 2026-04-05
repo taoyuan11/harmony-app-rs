@@ -3,10 +3,10 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, HarmonyAppError>;
+pub type Result<T> = std::result::Result<T, OhosAppError>;
 
 #[derive(Debug, Error)]
-pub enum HarmonyAppError {
+pub enum OhosAppError {
     #[error("{message}")]
     Message { message: String },
     #[error("failed to read configuration file [{path}]: {source}")]
@@ -22,7 +22,7 @@ pub enum HarmonyAppError {
     CargoMetadata(#[from] cargo_metadata::Error),
     #[error("Rust project [{manifest_path}] must define a library target")]
     MissingLibraryTarget { manifest_path: PathBuf },
-    #[error("unsupported HarmonyOS target triple [{target}]")]
+    #[error("unsupported OHOS target triple [{target}]")]
     UnsupportedTarget { target: String },
     #[error("OpenHarmony SDK root does not exist: [{path}]")]
     MissingSdkRoot { path: PathBuf },
@@ -48,7 +48,9 @@ pub enum HarmonyAppError {
     PackageArtifactNotFound { search_root: PathBuf },
 }
 
-impl HarmonyAppError {
+pub type HarmonyAppError = OhosAppError;
+
+impl OhosAppError {
     pub fn message(message: impl Into<String>) -> Self {
         Self::Message {
             message: message.into(),
@@ -63,7 +65,7 @@ impl HarmonyAppError {
     }
 }
 
-impl From<io::Error> for HarmonyAppError {
+impl From<io::Error> for OhosAppError {
     fn from(source: io::Error) -> Self {
         Self::Message {
             message: format!("I/O error: {source}"),

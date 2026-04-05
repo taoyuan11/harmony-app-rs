@@ -1,4 +1,0 @@
-ninja: Entering directory `D:\Project\Rust\libs\harmony-app\examples\counter-native\harmony-app\entry\.cxx\default\default\release\arm64-v8a'
-[1/2] Building CXX object CMakeFiles/entry.dir/napi_init.cpp.o
-clang++: warning: argument unused during compilation: '--gcc-toolchain=C:/Users/25422/AppData/Local/OpenHarmony/Sdk/20/native/llvm' [-Wunused-command-line-argument]
-[2/2] Linking CXX shared library out\libentry.so

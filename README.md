@@ -1,12 +1,12 @@
-# cargo-harmony-app
+# cargo-ohos-app
 
-`cargo-harmony-app` 是一个 Cargo 外部子命令，用来把 Rust library 项目包装成 HarmonyOS Stage Model 工程，并串联 HarmonyOS 打包流程。
+`cargo-ohos-app` 是一个 Cargo 外部子命令，用来把 Rust library 项目包装成 OHOS Stage Model 工程，并串联 OHOS 打包流程。
 
 ## 能力
 
-- `cargo harmony-app init`
-- `cargo harmony-app build`
-- `cargo harmony-app package`
+- `cargo ohos-app init`
+- `cargo ohos-app build`
+- `cargo ohos-app package`
 
 `package` 默认产出 `.hap`，可通过 `--artifact app` 切换为 `.app`。
 也支持通过 `--abi arm64-v8a|armeabi-v7a|x86_64|loongarch64` 切换目标架构；例如模拟器可用 `--abi x86_64`。
@@ -34,15 +34,15 @@ crate-type = ["cdylib", "staticlib"]
 
 ```rust
 #[unsafe(no_mangle)]
-pub extern "C" fn harmony_app_get_message() -> *const std::ffi::c_char;
+pub extern "C" fn ohos_app_get_message() -> *const std::ffi::c_char;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn harmony_app_increment_counter() -> u32;
+pub extern "C" fn ohos_app_increment_counter() -> u32;
 ```
 
 ## 快速开始
 
-示例工程位于 [examples/counter-native](/D:/Project/Rust/libs/harmony-app/examples/counter-native)。
+示例工程位于 [examples/counter-native](examples/counter-native)。
 
 ```powershell
 cd examples/counter-native
@@ -55,8 +55,8 @@ cargo run -- package --abi x86_64
 也可以安装后按 Cargo 子命令调用：
 
 ```powershell
-cargo install cargo-harmony-app
-cargo harmony-app package --manifest-path .\examples\counter-native\Cargo.toml
+cargo install cargo-ohos-app
+cargo ohos-app package --manifest-path .\examples\counter-native\Cargo.toml
 ```
 
 本地开发时也可以直接安装当前仓库：
@@ -67,7 +67,8 @@ cargo install --path .
 
 ## 配置
 
-如果项目根目录下存在 `harmony-app.toml`，会作为默认值来源。支持字段：
+如果项目根目录下存在 `ohos-app.toml`，会作为默认值来源。
+也兼容旧文件名 `harmony-app.toml`。支持字段：
 
 - `deveco_studio_dir`
 - `ohpm_path`

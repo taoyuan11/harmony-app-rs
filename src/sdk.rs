@@ -127,7 +127,7 @@ pub fn abi_to_target(abi: &str) -> Result<&'static str> {
         "x86_64" => Ok("x86_64-unknown-linux-ohos"),
         "loongarch64" => Ok("loongarch64-unknown-linux-ohos"),
         _ => Err(HarmonyAppError::message(format!(
-            "unsupported HarmonyOS ABI [{abi}]"
+            "unsupported OHOS ABI [{abi}]"
         ))),
     }
 }

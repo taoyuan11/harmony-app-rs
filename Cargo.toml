@@ -1,13 +1,13 @@
 [package]
-name = "cargo-harmony-app"
+name = "cargo-ohos-app"
 authors = ["a2542209451@gmail.com"]
 version = "0.1.0"
 edition = "2024"
-description = "Cargo subcommand for packaging Rust GUI apps as HarmonyOS applications"
+description = "Cargo subcommand for packaging Rust GUI apps as OHOS applications"
 license = "Apache-2.0"
 repository = "https://github.com/taoyuan11/harmony-app-rs"
 homepage = "https://github.com/taoyuan11/harmony-app-rs"
-documentation = "https://docs.rs/cargo-harmony-app"
+documentation = "https://docs.rs/cargo-ohos-app"
 readme = "README.md"
 keywords = ["cargo-subcommand", "harmonyos", "ohos", "packaging"]
 categories = ["command-line-utilities", "development-tools::cargo-plugins"]
@@ -17,10 +17,10 @@ exclude = [
 ]
 
 [lib]
-name = "harmony_app"
+name = "ohos_app"
 
 [[bin]]
-name = "cargo-harmony-app"
+name = "cargo-ohos-app"
 path = "src/main.rs"
 
 [dependencies]

@@ -74,7 +74,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cargo-harmony-app"
+name = "cargo-ohos-app"
 version = "0.1.0"
 dependencies = [
  "cargo_metadata",

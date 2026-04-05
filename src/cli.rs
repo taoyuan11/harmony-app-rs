@@ -4,10 +4,10 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
 #[command(
-    bin_name = "cargo harmony-app",
+    bin_name = "cargo ohos-app",
     author,
     version,
-    about = "Package Rust GUI applications as HarmonyOS apps"
+    about = "Package Rust GUI applications as OHOS apps"
 )]
 pub struct Cli {
     #[command(subcommand)]

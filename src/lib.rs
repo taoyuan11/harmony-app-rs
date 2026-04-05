@@ -13,7 +13,7 @@ use std::path::Path;
 
 use clap::Parser;
 use cli::{Cli, Commands};
-pub use errors::{HarmonyAppError, Result};
+pub use errors::{HarmonyAppError, OhosAppError, Result};
 use runner::RealCommandRunner;
 
 pub fn main_entry() -> Result<()> {
@@ -45,7 +45,10 @@ where
     S: Into<OsString>,
 {
     let mut args = args.into_iter().map(Into::into).collect::<Vec<_>>();
-    if args.get(1).and_then(|value| value.to_str()) == Some("harmony-app") {
+    if matches!(
+        args.get(1).and_then(|value| value.to_str()),
+        Some("ohos-app" | "harmony-app")
+    ) {
         args.remove(1);
     }
     args
@@ -58,15 +61,17 @@ mod tests {
 
     #[test]
     fn strips_cargo_forwarded_subcommand_name() {
-        let args = normalize_args([
-            OsString::from("cargo-harmony-app"),
-            OsString::from("harmony-app"),
-            OsString::from("init"),
-        ]);
-        let rendered = args
-            .iter()
-            .map(|value| value.to_string_lossy().to_string())
-            .collect::<Vec<_>>();
-        assert_eq!(rendered, vec!["cargo-harmony-app", "init"]);
+        for subcommand in ["ohos-app", "harmony-app"] {
+            let args = normalize_args([
+                OsString::from("cargo-ohos-app"),
+                OsString::from(subcommand),
+                OsString::from("init"),
+            ]);
+            let rendered = args
+                .iter()
+                .map(|value| value.to_string_lossy().to_string())
+                .collect::<Vec<_>>();
+            assert_eq!(rendered, vec!["cargo-ohos-app", "init"]);
+        }
     }
 }
