@@ -1,3 +1,4 @@
 .idea
 /target
-/examples/counter-native/target
+/examples/*/target
+/examples/*/ohos-app

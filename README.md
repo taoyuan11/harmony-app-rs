@@ -40,6 +40,24 @@ pub extern "C" fn ohos_app_get_message() -> *const std::ffi::c_char;
 pub extern "C" fn ohos_app_increment_counter() -> u32;
 ```
 
+如果项目依赖 `winit-ohos`，`cargo-ohos-app` 现在会自动切换到 `XComponent` 壳模板。
+这时不需要再手写 `NativeXComponent -> Rust` 桥接代码，只需要在 Rust 侧导出标准运行时入口：
+
+```rust
+use winit_core::application::ApplicationHandler;
+use winit_ohos::export_ohos_winit_app;
+
+#[derive(Default)]
+struct MyApp;
+
+impl ApplicationHandler for MyApp {}
+
+export_ohos_winit_app!(MyApp::default);
+```
+
+生成的壳会自动把 surface、focus、visibility、frame、touch、mouse、key 回调转发到
+`winit-ohos` 的运行时桥接层。
+
 ## 快速开始
 
 示例工程位于 [examples/counter-native](examples/counter-native)。

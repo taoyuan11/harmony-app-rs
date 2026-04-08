@@ -13,6 +13,7 @@ pub struct TemplateContext {
     pub sdk_display_version: String,
     pub abi: String,
     pub rust_lib_name: String,
+    pub uses_winit_ohos: bool,
     pub hvigor_package_path: String,
     pub hvigor_plugin_package_path: String,
 }
@@ -32,17 +33,24 @@ pub fn template_context(app: &AppContext) -> TemplateContext {
         sdk_display_version: app.sdk.display_version.clone(),
         abi: app.config.abi.clone(),
         rust_lib_name: app.project.lib_name.clone(),
+        uses_winit_ohos: app.project.uses_winit_ohos,
         hvigor_package_path: path_for_package_json(&app.hvigor.hvigor_package_dir),
         hvigor_plugin_package_path: path_for_package_json(&app.hvigor.hvigor_plugin_package_dir),
     }
 }
 
 pub fn generated_files(context: &TemplateContext) -> Vec<GeneratedFile> {
+    let overrides = if context.uses_winit_ohos {
+        Some(WINIT_TEMPLATE_OVERRIDES)
+    } else {
+        None
+    };
+
     TEMPLATE_FILES
         .iter()
         .map(|(relative_path, template)| GeneratedFile {
             relative_path,
-            contents: render_template(template, context),
+            contents: render_template(resolve_template(relative_path, template, overrides), context),
         })
         .collect()
 }
@@ -117,6 +125,17 @@ fn render_template(template: &str, context: &TemplateContext) -> String {
             "{{HVIGOR_PLUGIN_PACKAGE_PATH}}",
             &context.hvigor_plugin_package_path,
         )
+}
+
+fn resolve_template<'a>(
+    relative_path: &str,
+    fallback: &'a str,
+    overrides: Option<&'a [(&'a str, &'a str)]>,
+) -> &'a str {
+    overrides
+        .and_then(|entries| entries.iter().find(|(path, _)| *path == relative_path))
+        .map(|(_, template)| *template)
+        .unwrap_or(fallback)
 }
 
 const TEMPLATE_FILES: &[(&str, &str)] = &[
@@ -588,6 +607,443 @@ export default bridge;
     ),
 ];
 
+const WINIT_TEMPLATE_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "entry/src/main/ets/pages/Index.ets",
+        r#"@Entry
+@Component
+struct Index {
+  build() {
+    Stack() {
+      XComponent({
+        id: 'winit-surface',
+        type: 'surface',
+        libraryname: 'entry'
+      })
+        .width('100%')
+        .height('100%')
+        .focusable(true)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    }
+    .width('100%')
+    .height('100%')
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+}
+"#,
+    ),
+    (
+        "entry/src/main/cpp/CMakeLists.txt",
+        r#"cmake_minimum_required(VERSION 3.5.0)
+project(ohos_app_winit_shell)
+
+set(NATIVERENDER_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_library(rust_bridge STATIC IMPORTED)
+set_target_properties(rust_bridge PROPERTIES
+    IMPORTED_LOCATION ${NATIVERENDER_ROOT_PATH}/libs/{{ABI}}/lib{{RUST_LIB_NAME}}.a
+)
+
+find_library(ACE_NDK_LIB ace_ndk.z)
+find_library(ACE_NAPI_LIB ace_napi.z)
+find_library(UV_LIB uv)
+
+add_library(entry SHARED napi_init.cpp)
+set_target_properties(entry PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/out
+)
+target_link_libraries(entry PUBLIC
+    rust_bridge
+    ${ACE_NDK_LIB}
+    ${ACE_NAPI_LIB}
+    ${UV_LIB}
+    libnative_window.so
+)
+"#,
+    ),
+    (
+        "entry/src/main/cpp/napi_init.cpp",
+        r#"#include <napi/native_api.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include <mutex>
+
+#include <ace/xcomponent/native_interface_xcomponent.h>
+
+extern "C" {
+void* ohos_winit_runtime_new();
+void ohos_winit_runtime_free(void* runtime);
+void ohos_winit_runtime_surface_created(
+    const void* runtime,
+    void* xcomponent,
+    void* native_window,
+    uint32_t width,
+    uint32_t height,
+    double scale_factor
+);
+void ohos_winit_runtime_surface_changed(
+    const void* runtime,
+    void* xcomponent,
+    void* native_window,
+    uint32_t width,
+    uint32_t height,
+    double scale_factor
+);
+void ohos_winit_runtime_surface_destroyed(const void* runtime);
+void ohos_winit_runtime_focus(const void* runtime, bool focused);
+void ohos_winit_runtime_visibility(const void* runtime, bool visible);
+void ohos_winit_runtime_low_memory(const void* runtime);
+void ohos_winit_runtime_frame(const void* runtime);
+void ohos_winit_runtime_key(
+    const void* runtime,
+    uint32_t action,
+    uint32_t key_code,
+    bool repeat,
+    int64_t device_id
+);
+void ohos_winit_runtime_touch(
+    const void* runtime,
+    uint32_t action,
+    uint32_t source,
+    uint64_t finger_id,
+    double x,
+    double y,
+    double force,
+    bool has_force,
+    int64_t device_id,
+    bool primary
+);
+void ohos_winit_runtime_mouse(
+    const void* runtime,
+    uint32_t action,
+    uint32_t button,
+    bool has_button,
+    double x,
+    double y,
+    double delta_x,
+    double delta_y,
+    int64_t device_id,
+    bool primary
+);
+}
+
+namespace {
+
+std::mutex g_runtime_mutex;
+void* g_runtime = nullptr;
+float g_last_mouse_x = 0.0f;
+float g_last_mouse_y = 0.0f;
+
+void* EnsureRuntime()
+{
+    std::lock_guard<std::mutex> lock(g_runtime_mutex);
+    if (g_runtime == nullptr) {
+        g_runtime = ohos_winit_runtime_new();
+    }
+    return g_runtime;
+}
+
+uint32_t MapTouchAction(OH_NativeXComponent_TouchEventType type)
+{
+    switch (type) {
+        case OH_NATIVEXCOMPONENT_DOWN:
+            return 0;
+        case OH_NATIVEXCOMPONENT_UP:
+            return 1;
+        case OH_NATIVEXCOMPONENT_MOVE:
+            return 2;
+        case OH_NATIVEXCOMPONENT_CANCEL:
+        default:
+            return 3;
+    }
+}
+
+uint32_t MapPointerSource(OH_NativeXComponent_EventSourceType source)
+{
+    switch (source) {
+        case OH_NATIVEXCOMPONENT_SOURCE_TYPE_TOUCHSCREEN:
+            return 0;
+        case OH_NATIVEXCOMPONENT_SOURCE_TYPE_MOUSE:
+            return 1;
+        case OH_NATIVEXCOMPONENT_SOURCE_TYPE_TOUCHPAD:
+            return 2;
+        default:
+            return 3;
+    }
+}
+
+uint32_t MapMouseAction(OH_NativeXComponent_MouseEventAction action)
+{
+    switch (action) {
+        case OH_NATIVEXCOMPONENT_MOUSE_PRESS:
+            return 1;
+        case OH_NATIVEXCOMPONENT_MOUSE_RELEASE:
+            return 2;
+        case OH_NATIVEXCOMPONENT_MOUSE_MOVE:
+            return 0;
+        case OH_NATIVEXCOMPONENT_MOUSE_CANCEL:
+            return 6;
+        case OH_NATIVEXCOMPONENT_MOUSE_NONE:
+        default:
+            return 0;
+    }
+}
+
+uint32_t MapMouseButton(OH_NativeXComponent_MouseEventButton button, bool* hasButton)
+{
+    *hasButton = true;
+    switch (button) {
+        case OH_NATIVEXCOMPONENT_LEFT_BUTTON:
+            return 0;
+        case OH_NATIVEXCOMPONENT_MIDDLE_BUTTON:
+            return 1;
+        case OH_NATIVEXCOMPONENT_RIGHT_BUTTON:
+            return 2;
+        case OH_NATIVEXCOMPONENT_BACK_BUTTON:
+            return 3;
+        case OH_NATIVEXCOMPONENT_FORWARD_BUTTON:
+            return 4;
+        case OH_NATIVEXCOMPONENT_NONE_BUTTON:
+        default:
+            *hasButton = false;
+            return 0;
+    }
+}
+
+uint32_t MapKeyAction(OH_NativeXComponent_KeyAction action)
+{
+    switch (action) {
+        case OH_NATIVEXCOMPONENT_KEY_ACTION_DOWN:
+            return 0;
+        case OH_NATIVEXCOMPONENT_KEY_ACTION_UP:
+            return 1;
+        case OH_NATIVEXCOMPONENT_KEY_ACTION_UNKNOWN:
+        default:
+            return 2;
+    }
+}
+
+void OnSurfaceCreated(OH_NativeXComponent* component, void* window)
+{
+    uint64_t width = 0;
+    uint64_t height = 0;
+    OH_NativeXComponent_GetXComponentSize(component, window, &width, &height);
+    ohos_winit_runtime_surface_created(
+        EnsureRuntime(),
+        component,
+        window,
+        static_cast<uint32_t>(width),
+        static_cast<uint32_t>(height),
+        1.0);
+}
+
+void OnSurfaceChanged(OH_NativeXComponent* component, void* window)
+{
+    uint64_t width = 0;
+    uint64_t height = 0;
+    OH_NativeXComponent_GetXComponentSize(component, window, &width, &height);
+    ohos_winit_runtime_surface_changed(
+        EnsureRuntime(),
+        component,
+        window,
+        static_cast<uint32_t>(width),
+        static_cast<uint32_t>(height),
+        1.0);
+}
+
+void OnSurfaceDestroyed(OH_NativeXComponent* component, void* window)
+{
+    (void)component;
+    (void)window;
+    ohos_winit_runtime_surface_destroyed(EnsureRuntime());
+}
+
+void OnTouch(OH_NativeXComponent* component, void* window)
+{
+    OH_NativeXComponent_TouchEvent touchEvent {};
+    if (OH_NativeXComponent_GetTouchEvent(component, window, &touchEvent) != 0) {
+        return;
+    }
+
+    OH_NativeXComponent_EventSourceType source = OH_NATIVEXCOMPONENT_SOURCE_TYPE_TOUCHSCREEN;
+    OH_NativeXComponent_GetTouchEventSourceType(component, touchEvent.id, &source);
+
+    bool primary = touchEvent.numPoints == 0 || touchEvent.touchPoints[0].id == touchEvent.id;
+    ohos_winit_runtime_touch(
+        EnsureRuntime(),
+        MapTouchAction(touchEvent.type),
+        MapPointerSource(source),
+        static_cast<uint64_t>(touchEvent.id),
+        touchEvent.x,
+        touchEvent.y,
+        touchEvent.force,
+        true,
+        touchEvent.deviceId,
+        primary);
+}
+
+void OnMouse(OH_NativeXComponent* component, void* window)
+{
+    OH_NativeXComponent_MouseEvent mouseEvent {};
+    if (OH_NativeXComponent_GetMouseEvent(component, window, &mouseEvent) != 0) {
+        return;
+    }
+
+    g_last_mouse_x = mouseEvent.x;
+    g_last_mouse_y = mouseEvent.y;
+
+    bool hasButton = false;
+    uint32_t button = MapMouseButton(mouseEvent.button, &hasButton);
+    ohos_winit_runtime_mouse(
+        EnsureRuntime(),
+        MapMouseAction(mouseEvent.action),
+        button,
+        hasButton,
+        mouseEvent.x,
+        mouseEvent.y,
+        0.0,
+        0.0,
+        0,
+        true);
+}
+
+void OnHover(OH_NativeXComponent* component, bool isHover)
+{
+    (void)component;
+    ohos_winit_runtime_mouse(
+        EnsureRuntime(),
+        isHover ? 4 : 5,
+        0,
+        false,
+        g_last_mouse_x,
+        g_last_mouse_y,
+        0.0,
+        0.0,
+        0,
+        true);
+}
+
+void OnFocus(OH_NativeXComponent* component, void* window)
+{
+    (void)component;
+    (void)window;
+    ohos_winit_runtime_focus(EnsureRuntime(), true);
+}
+
+void OnBlur(OH_NativeXComponent* component, void* window)
+{
+    (void)component;
+    (void)window;
+    ohos_winit_runtime_focus(EnsureRuntime(), false);
+}
+
+void OnKey(OH_NativeXComponent* component, void* window)
+{
+    (void)window;
+    OH_NativeXComponent_KeyEvent* keyEvent = nullptr;
+    if (OH_NativeXComponent_GetKeyEvent(component, &keyEvent) != 0 || keyEvent == nullptr) {
+        return;
+    }
+
+    OH_NativeXComponent_KeyAction action = OH_NATIVEXCOMPONENT_KEY_ACTION_UNKNOWN;
+    OH_NativeXComponent_KeyCode code = static_cast<OH_NativeXComponent_KeyCode>(KEY_UNKNOWN);
+    int64_t deviceId = 0;
+    OH_NativeXComponent_GetKeyEventAction(keyEvent, &action);
+    OH_NativeXComponent_GetKeyEventCode(keyEvent, &code);
+    OH_NativeXComponent_GetKeyEventDeviceId(keyEvent, &deviceId);
+
+    ohos_winit_runtime_key(
+        EnsureRuntime(),
+        MapKeyAction(action),
+        static_cast<uint32_t>(code),
+        false,
+        deviceId);
+}
+
+void OnSurfaceShow(OH_NativeXComponent* component, void* window)
+{
+    (void)component;
+    (void)window;
+    ohos_winit_runtime_visibility(EnsureRuntime(), true);
+}
+
+void OnSurfaceHide(OH_NativeXComponent* component, void* window)
+{
+    (void)component;
+    (void)window;
+    ohos_winit_runtime_visibility(EnsureRuntime(), false);
+}
+
+void OnFrame(OH_NativeXComponent* component, uint64_t timestamp, uint64_t targetTimestamp)
+{
+    (void)component;
+    (void)timestamp;
+    (void)targetTimestamp;
+    ohos_winit_runtime_frame(EnsureRuntime());
+}
+
+void RegisterXComponentCallbacks(napi_env env, napi_value exports)
+{
+    napi_value exportInstance = nullptr;
+    if (napi_get_named_property(env, exports, OH_NATIVE_XCOMPONENT_OBJ, &exportInstance) != napi_ok) {
+        return;
+    }
+
+    OH_NativeXComponent* nativeXComponent = nullptr;
+    if (napi_unwrap(env, exportInstance, reinterpret_cast<void**>(&nativeXComponent)) != napi_ok ||
+        nativeXComponent == nullptr) {
+        return;
+    }
+
+    static OH_NativeXComponent_Callback componentCallbacks {
+        .OnSurfaceCreated = OnSurfaceCreated,
+        .OnSurfaceChanged = OnSurfaceChanged,
+        .OnSurfaceDestroyed = OnSurfaceDestroyed,
+        .DispatchTouchEvent = OnTouch,
+    };
+
+    static OH_NativeXComponent_MouseEvent_Callback mouseCallbacks {
+        .DispatchMouseEvent = OnMouse,
+        .DispatchHoverEvent = OnHover,
+    };
+
+    OH_NativeXComponent_RegisterCallback(nativeXComponent, &componentCallbacks);
+    OH_NativeXComponent_RegisterMouseEventCallback(nativeXComponent, &mouseCallbacks);
+    OH_NativeXComponent_RegisterFocusEventCallback(nativeXComponent, OnFocus);
+    OH_NativeXComponent_RegisterBlurEventCallback(nativeXComponent, OnBlur);
+    OH_NativeXComponent_RegisterKeyEventCallback(nativeXComponent, OnKey);
+    OH_NativeXComponent_RegisterSurfaceShowCallback(nativeXComponent, OnSurfaceShow);
+    OH_NativeXComponent_RegisterSurfaceHideCallback(nativeXComponent, OnSurfaceHide);
+    OH_NativeXComponent_RegisterOnFrameCallback(nativeXComponent, OnFrame);
+}
+
+napi_value Init(napi_env env, napi_value exports)
+{
+    RegisterXComponentCallbacks(env, exports);
+    return exports;
+}
+
+static napi_module cargoOhosAppModule = {
+    .nm_version = 1,
+    .nm_flags = 0,
+    .nm_filename = nullptr,
+    .nm_register_func = Init,
+    .nm_modname = "entry",
+    .nm_priv = nullptr,
+    .reserved = { 0 }
+};
+
+} // namespace
+
+extern "C" __attribute__((constructor)) void RegisterCargoOhosAppModule(void)
+{
+    napi_module_register(&cargoOhosAppModule);
+}
+"#,
+    ),
+];
+
 const ICON_PNG_BYTES: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
     0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
@@ -610,6 +1066,7 @@ mod tests {
             sdk_display_version: "6.0.0(20)".to_string(),
             abi: "arm64-v8a".to_string(),
             rust_lib_name: "counter_native".to_string(),
+            uses_winit_ohos: false,
             hvigor_package_path: "D:/hvigor".to_string(),
             hvigor_plugin_package_path: "D:/hvigor-ohos-plugin".to_string(),
         });
@@ -618,5 +1075,35 @@ mod tests {
             .find(|file| file.relative_path == "AppScope/app.json5")
             .unwrap();
         assert!(app_json.contents.contains("com.example.demo"));
+    }
+
+    #[test]
+    fn renders_winit_shell_when_project_uses_winit_ohos() {
+        let files = generated_files(&TemplateContext {
+            app_name: "demo".to_string(),
+            bundle_name: "com.example.demo".to_string(),
+            module_name: "entry".to_string(),
+            sdk_api_version: "20".to_string(),
+            sdk_display_version: "6.0.0(20)".to_string(),
+            abi: "arm64-v8a".to_string(),
+            rust_lib_name: "counter_native".to_string(),
+            uses_winit_ohos: true,
+            hvigor_package_path: "D:/hvigor".to_string(),
+            hvigor_plugin_package_path: "D:/hvigor-ohos-plugin".to_string(),
+        });
+
+        let page = files
+            .iter()
+            .find(|file| file.relative_path == "entry/src/main/ets/pages/Index.ets")
+            .unwrap();
+        assert!(page.contents.contains("XComponent"));
+        assert!(page.contents.contains("libraryname: 'entry'"));
+
+        let bridge = files
+            .iter()
+            .find(|file| file.relative_path == "entry/src/main/cpp/napi_init.cpp")
+            .unwrap();
+        assert!(bridge.contents.contains("ohos_winit_runtime_new"));
+        assert!(bridge.contents.contains("OH_NativeXComponent_RegisterCallback"));
     }
 }

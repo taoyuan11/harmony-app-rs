@@ -11,6 +11,7 @@ pub struct ProjectInfo {
     pub package_name: String,
     pub lib_name: String,
     pub target_dir: PathBuf,
+    pub uses_winit_ohos: bool,
 }
 
 impl ProjectInfo {
@@ -36,6 +37,10 @@ impl ProjectInfo {
             .parent()
             .ok_or_else(|| HarmonyAppError::message("manifest path has no parent directory"))?
             .to_path_buf();
+        let uses_winit_ohos = package
+            .dependencies
+            .iter()
+            .any(|dependency| dependency.name == "winit-ohos");
 
         Ok(Self {
             manifest_path: canonical_manifest,
@@ -43,6 +48,7 @@ impl ProjectInfo {
             package_name: package.name.to_string(),
             lib_name: library.name.replace('-', "_"),
             target_dir: metadata.target_directory.into_std_path_buf(),
+            uses_winit_ohos,
         })
     }
 
@@ -109,5 +115,6 @@ crate-type = ["staticlib"]
         let info = ProjectInfo::load(&manifest).unwrap();
         assert_eq!(info.package_name, "demo-app");
         assert_eq!(info.lib_name, "demo_app");
+        assert!(!info.uses_winit_ohos);
     }
 }
