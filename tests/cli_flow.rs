@@ -53,6 +53,54 @@ fn init_generates_ohos_shell_structure() {
 }
 
 #[test]
+fn init_adds_staticlib_and_rlib_to_manifest() {
+    let fixture = TestFixture::new_without_lib_section();
+    let mut runner = RecordingRunner::default();
+    let mut stdout = Vec::new();
+
+    run_with(
+        fixture.common_args(["init"]),
+        fixture.project_dir.path(),
+        &mut runner,
+        &mut stdout,
+    )
+    .unwrap();
+
+    let manifest = fs::read_to_string(fixture.project_dir.path().join("Cargo.toml")).unwrap();
+    assert!(manifest.contains("[lib]"));
+    assert!(manifest.contains(r#"crate-type = ["staticlib", "rlib"]"#));
+}
+
+#[test]
+fn init_updates_manifest_when_manifest_path_is_relative() {
+    let fixture = TestFixture::new_without_lib_section();
+    let mut runner = RecordingRunner::default();
+    let mut stdout = Vec::new();
+
+    run_with(
+        vec![
+            "cargo-ohos-app".to_string(),
+            "init".to_string(),
+            "--manifest-path".to_string(),
+            "Cargo.toml".to_string(),
+            "--sdk-root".to_string(),
+            fixture.sdk_root.display().to_string(),
+            "--deveco-studio-dir".to_string(),
+            fixture.deveco_dir.display().to_string(),
+            "--ohpm-path".to_string(),
+            fixture.ohpm_path.display().to_string(),
+        ],
+        fixture.project_dir.path(),
+        &mut runner,
+        &mut stdout,
+    )
+    .unwrap();
+
+    let manifest = fs::read_to_string(fixture.project_dir.path().join("Cargo.toml")).unwrap();
+    assert!(manifest.contains(r#"crate-type = ["staticlib", "rlib"]"#));
+}
+
+#[test]
 fn build_dry_run_prints_cargo_and_copy_plan() {
     let fixture = TestFixture::new();
     let mut runner = RecordingRunner::default();
@@ -179,6 +227,20 @@ impl TestFixture {
             deveco_dir,
             ohpm_path,
         }
+    }
+
+    fn new_without_lib_section() -> Self {
+        let fixture = Self::new();
+        fs::write(
+            fixture.project_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "counter-native"
+version = "0.1.0"
+edition = "2024"
+"#,
+        )
+        .unwrap();
+        fixture
     }
 
     fn common_args<const N: usize>(&self, tail: [&str; N]) -> Vec<String> {

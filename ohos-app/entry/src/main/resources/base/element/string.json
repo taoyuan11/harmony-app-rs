@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Rust generated OHOS module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Entry ability"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "cargo-ohos-app"
+    }
+  ]
+}

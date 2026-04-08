@@ -50,7 +50,10 @@ pub fn generated_files(context: &TemplateContext) -> Vec<GeneratedFile> {
         .iter()
         .map(|(relative_path, template)| GeneratedFile {
             relative_path,
-            contents: render_template(resolve_template(relative_path, template, overrides), context),
+            contents: render_template(
+                resolve_template(relative_path, template, overrides),
+                context,
+            ),
         })
         .collect()
 }
@@ -411,6 +414,27 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
+    try {
+      const mainWindow = windowStage.getMainWindowSync();
+      mainWindow.setWindowLayoutFullScreen(true)
+        .then(() => mainWindow.setWindowSystemBarEnable([]))
+        .catch((err: Error) => {
+          hilog.error(
+            DOMAIN,
+            'cargo-ohos-app',
+            'Failed to configure immersive window: %{public}s',
+            JSON.stringify(err)
+          );
+        });
+    } catch (err) {
+      hilog.error(
+        DOMAIN,
+        'cargo-ohos-app',
+        'Failed to get main window: %{public}s',
+        JSON.stringify(err)
+      );
+    }
+
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'cargo-ohos-app', 'Failed to load page: %{public}s', JSON.stringify(err));
@@ -608,6 +632,50 @@ export default bridge;
 ];
 
 const WINIT_TEMPLATE_OVERRIDES: &[(&str, &str)] = &[
+    (
+        "entry/src/main/ets/entryability/EntryAbility.ets",
+        r#"import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { window } from '@kit.ArkUI';
+
+const DOMAIN = 0x3433;
+
+export default class EntryAbility extends UIAbility {
+  onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    hilog.info(DOMAIN, 'cargo-ohos-app', '%{public}s', 'Ability onCreate');
+  }
+
+  onWindowStageCreate(windowStage: window.WindowStage): void {
+    try {
+      const mainWindow = windowStage.getMainWindowSync();
+      mainWindow.setWindowLayoutFullScreen(true)
+        .then(() => mainWindow.setWindowSystemBarEnable([]))
+        .catch((err: Error) => {
+          hilog.error(
+            DOMAIN,
+            'cargo-ohos-app',
+            'Failed to configure immersive window: %{public}s',
+            JSON.stringify(err)
+          );
+        });
+    } catch (err) {
+      hilog.error(
+        DOMAIN,
+        'cargo-ohos-app',
+        'Failed to get main window: %{public}s',
+        JSON.stringify(err)
+      );
+    }
+
+    windowStage.loadContent('pages/Index', (err) => {
+      if (err.code) {
+        hilog.error(DOMAIN, 'cargo-ohos-app', 'Failed to load page: %{public}s', JSON.stringify(err));
+      }
+    });
+  }
+}
+"#,
+    ),
     (
         "entry/src/main/ets/pages/Index.ets",
         r#"@Entry
@@ -1099,11 +1167,22 @@ mod tests {
         assert!(page.contents.contains("XComponent"));
         assert!(page.contents.contains("libraryname: 'entry'"));
 
+        let ability = files
+            .iter()
+            .find(|file| file.relative_path == "entry/src/main/ets/entryability/EntryAbility.ets")
+            .unwrap();
+        assert!(ability.contents.contains("setWindowLayoutFullScreen(true)"));
+        assert!(ability.contents.contains("setWindowSystemBarEnable([])"));
+
         let bridge = files
             .iter()
             .find(|file| file.relative_path == "entry/src/main/cpp/napi_init.cpp")
             .unwrap();
         assert!(bridge.contents.contains("ohos_winit_runtime_new"));
-        assert!(bridge.contents.contains("OH_NativeXComponent_RegisterCallback"));
+        assert!(
+            bridge
+                .contents
+                .contains("OH_NativeXComponent_RegisterCallback")
+        );
     }
 }

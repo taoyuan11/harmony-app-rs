@@ -1,0 +1,15 @@
+[package]
+name = "winit-smoke"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+dpi = "0.1.2"
+pollster = "0.4"
+raw-window-handle = { version = "0.6.2", features = ["std"] }
+wgpu = "29"
+winit-core = "0.31.0-beta.2"
+winit-ohos = { path = "../../../winit-ohos" }

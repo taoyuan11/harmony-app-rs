@@ -1,0 +1,14 @@
+[package]
+name = "aaaa1"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+winit-core = "0.31.0-beta.2"
+winit-ohos = { path = "../../../winit-ohos" }
+dpi = "0.1.2"
+pollster = "0.4"
+raw-window-handle = { version = "0.6.2", features = ["std"] }
+
+[lib]
+crate-type = ["staticlib", "rlib"]

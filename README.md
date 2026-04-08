@@ -60,7 +60,7 @@ export_ohos_winit_app!(MyApp::default);
 
 ## 快速开始
 
-示例工程位于 [examples/counter-native](examples/counter-native)。
+最小 C ABI 示例位于 [examples/counter-native](examples/counter-native)。
 
 ```powershell
 cd examples/counter-native
@@ -70,11 +70,24 @@ cargo run -- package
 cargo run -- package --abi x86_64
 ```
 
-也可以安装后按 Cargo 子命令调用：
+推荐的 `winit-ohos` 联调与打包示例位于 [examples/winit-smoke](examples/winit-smoke)，默认面向
+`x86_64-unknown-linux-ohos` 模拟器目标：
+
+```powershell
+cargo run -- package --manifest-path .\examples\winit-smoke\Cargo.toml
+```
+
+如果已经安装为 Cargo 子命令，也可以直接这样调用：
 
 ```powershell
 cargo install cargo-ohos-app
-cargo ohos-app package --manifest-path .\examples\counter-native\Cargo.toml
+cargo ohos-app package --manifest-path .\examples\winit-smoke\Cargo.toml
+```
+
+如需覆盖默认目标，例如切到设备 ABI：
+
+```powershell
+cargo ohos-app package --manifest-path .\examples\winit-smoke\Cargo.toml --abi arm64-v8a
 ```
 
 本地开发时也可以直接安装当前仓库：
