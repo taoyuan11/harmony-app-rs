@@ -40,7 +40,7 @@ impl ProjectInfo {
         let uses_winit_ohos = package
             .dependencies
             .iter()
-            .any(|dependency| dependency.name == "winit-ohos");
+            .any(|dependency| dependency.name == "tgui-winit-ohos");
 
         Ok(Self {
             manifest_path: canonical_manifest,
@@ -116,5 +116,31 @@ crate-type = ["staticlib"]
         assert_eq!(info.package_name, "demo-app");
         assert_eq!(info.lib_name, "demo_app");
         assert!(!info.uses_winit_ohos);
+    }
+
+    #[test]
+    fn detects_tgui_winit_ohos_dependency() {
+        let temp = TempDir::new().unwrap();
+        let manifest = temp.path().join("Cargo.toml");
+        fs::write(
+            &manifest,
+            r#"[package]
+name = "demo-app"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+tgui-winit-ohos = "0.0.1"
+"#,
+        )
+        .unwrap();
+        fs::create_dir_all(temp.path().join("src")).unwrap();
+        fs::write(temp.path().join("src/lib.rs"), "pub fn marker() {}").unwrap();
+
+        let info = ProjectInfo::load(&manifest).unwrap();
+        assert!(info.uses_winit_ohos);
     }
 }
