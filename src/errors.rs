@@ -9,12 +9,19 @@ pub type Result<T> = std::result::Result<T, OhosAppError>;
 pub enum OhosAppError {
     #[error("{message}")]
     Message { message: String },
-    #[error("failed to read configuration file [{path}]: {source}")]
-    ConfigRead { path: PathBuf, source: io::Error },
-    #[error("failed to parse configuration file [{path}]: {source}")]
+    #[error("failed to parse package metadata in [{manifest_path}]: {source}")]
     ConfigParse {
-        path: PathBuf,
-        source: toml::de::Error,
+        manifest_path: PathBuf,
+        source: serde_json::Error,
+    },
+    #[error(
+        "missing required configuration [{field}]; provide it via {cli_flag}, env {env_names}, or [package.metadata.ohos-app.<profile>] in [{manifest_path}]"
+    )]
+    MissingRequiredConfig {
+        field: &'static str,
+        cli_flag: &'static str,
+        env_names: &'static str,
+        manifest_path: PathBuf,
     },
     #[error("failed to read file [{path}]: {source}")]
     Io { path: PathBuf, source: io::Error },

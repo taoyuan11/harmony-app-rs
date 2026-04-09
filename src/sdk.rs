@@ -108,26 +108,26 @@ pub fn discover_hvigor(deveco_studio_dir: &Path) -> Result<HvigorInfo> {
     })
 }
 
-pub fn target_to_abi(target: &str) -> Result<&'static str> {
+pub fn target_to_abi_dir(target: &str) -> Result<&'static str> {
     match target {
-        "aarch64-unknown-linux-ohos" => Ok("arm64-v8a"),
-        "armv7-unknown-linux-ohos" => Ok("armeabi-v7a"),
-        "x86_64-unknown-linux-ohos" => Ok("x86_64"),
-        "loongarch64-unknown-linux-ohos" => Ok("loongarch64"),
+        "arm64-v8a" => Ok("arm64-v8a"),
+        "armeabi-v7a" => Ok("armeabi-v7a"),
+        "x86_64" => Ok("x86_64"),
+        "loongarch64" => Ok("loongarch64"),
         _ => Err(HarmonyAppError::UnsupportedTarget {
             target: target.to_string(),
         }),
     }
 }
 
-pub fn abi_to_target(abi: &str) -> Result<&'static str> {
-    match abi {
+pub fn target_to_rust_triple(target: &str) -> Result<&'static str> {
+    match target {
         "arm64-v8a" => Ok("aarch64-unknown-linux-ohos"),
         "armeabi-v7a" => Ok("armv7-unknown-linux-ohos"),
         "x86_64" => Ok("x86_64-unknown-linux-ohos"),
         "loongarch64" => Ok("loongarch64-unknown-linux-ohos"),
         _ => Err(HarmonyAppError::message(format!(
-            "unsupported OHOS ABI [{abi}]"
+            "unsupported OHOS target [{target}]"
         ))),
     }
 }
@@ -162,7 +162,7 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use super::{abi_to_target, discover_sdk, target_to_abi};
+    use super::{discover_sdk, target_to_abi_dir, target_to_rust_triple};
 
     #[test]
     fn auto_selects_largest_numeric_sdk_version() {
@@ -184,16 +184,10 @@ mod tests {
 
     #[test]
     fn maps_targets_to_abis() {
+        assert_eq!(target_to_abi_dir("arm64-v8a").unwrap(), "arm64-v8a");
+        assert_eq!(target_to_abi_dir("armeabi-v7a").unwrap(), "armeabi-v7a");
         assert_eq!(
-            target_to_abi("aarch64-unknown-linux-ohos").unwrap(),
-            "arm64-v8a"
-        );
-        assert_eq!(
-            target_to_abi("armv7-unknown-linux-ohos").unwrap(),
-            "armeabi-v7a"
-        );
-        assert_eq!(
-            abi_to_target("x86_64").unwrap(),
+            target_to_rust_triple("x86_64").unwrap(),
             "x86_64-unknown-linux-ohos"
         );
     }

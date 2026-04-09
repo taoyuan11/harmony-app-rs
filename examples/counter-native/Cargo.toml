@@ -3,5 +3,14 @@ name = "counter-native"
 version = "0.1.0"
 edition = "2024"
 
+[package.metadata.ohos-app.default]
+version_name = "0.1.0"
+version_code = 1
+app_name = "Counter Native"
+bundle_name = "com.example.counternative"
+module_name = "entry"
+target = "arm64-v8a"
+output_dir = "ohos-app"
+
 [lib]
 crate-type = ["cdylib", "staticlib"]

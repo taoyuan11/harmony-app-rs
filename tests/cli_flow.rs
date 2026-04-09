@@ -166,7 +166,7 @@ fn package_x86_64_dry_run_switches_target_and_output_dir() {
     let mut stdout = Vec::new();
 
     run_with(
-        fixture.common_args(["package", "--abi", "x86_64", "--dry-run"]),
+        fixture.common_args(["package", "--target", "x86_64", "--dry-run"]),
         fixture.project_dir.path(),
         &mut runner,
         &mut stdout,
@@ -176,6 +176,49 @@ fn package_x86_64_dry_run_switches_target_and_output_dir() {
     let output = String::from_utf8(stdout).unwrap();
     assert!(output.contains("--target x86_64-unknown-linux-ohos"));
     assert!(output.contains("cpp\\libs\\x86_64"));
+}
+
+#[test]
+fn init_fails_fast_when_required_paths_are_missing() {
+    let fixture = TestFixture::new();
+    let mut runner = RecordingRunner::default();
+    let mut stdout = Vec::new();
+
+    let error = run_with(
+        vec!["cargo-ohos-app".to_string(), "init".to_string()],
+        fixture.project_dir.path(),
+        &mut runner,
+        &mut stdout,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        OhosAppError::MissingRequiredConfig {
+            field: "deveco_studio_dir",
+            ..
+        }
+    ));
+}
+
+#[test]
+fn build_dry_run_uses_release_metadata_overrides() {
+    let fixture = TestFixture::new();
+    fixture.write_release_profile_metadata();
+    let mut runner = RecordingRunner::default();
+    let mut stdout = Vec::new();
+
+    run_with(
+        fixture.common_args(["build", "--dry-run", "--release"]),
+        fixture.project_dir.path(),
+        &mut runner,
+        &mut stdout,
+    )
+    .unwrap();
+
+    let output = String::from_utf8(stdout).unwrap();
+    assert!(output.contains("--release"));
+    assert!(output.contains("ohos-app-release"));
 }
 
 #[test]
@@ -237,6 +280,12 @@ impl TestFixture {
 name = "counter-native"
 version = "0.1.0"
 edition = "2024"
+
+[package.metadata.ohos-app.default]
+bundle_name = "com.example.counternative"
+module_name = "entry"
+target = "arm64-v8a"
+output_dir = "ohos-app"
 "#,
         )
         .unwrap();
@@ -280,6 +329,30 @@ edition = "2024"
         }
         fs::write(artifact, b"fake so").unwrap();
     }
+
+    fn write_release_profile_metadata(&self) {
+        fs::write(
+            self.project_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "counter-native"
+version = "0.1.0"
+edition = "2024"
+
+[package.metadata.ohos-app.default]
+bundle_name = "com.example.counternative"
+module_name = "entry"
+target = "arm64-v8a"
+output_dir = "ohos-app"
+
+[package.metadata.ohos-app.release]
+output_dir = "ohos-app-release"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+"#,
+        )
+        .unwrap();
+    }
 }
 
 fn create_project(root: &Path) {
@@ -290,6 +363,12 @@ fn create_project(root: &Path) {
 name = "counter-native"
 version = "0.1.0"
 edition = "2024"
+
+[package.metadata.ohos-app.default]
+bundle_name = "com.example.counternative"
+module_name = "entry"
+target = "arm64-v8a"
+output_dir = "ohos-app"
 
 [lib]
 crate-type = ["cdylib", "staticlib"]

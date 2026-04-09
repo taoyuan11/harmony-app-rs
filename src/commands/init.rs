@@ -48,7 +48,8 @@ pub(crate) fn ensure_library_manifest(common: &CommonArgs, cwd: &Path) -> Result
         .map_err(|source| HarmonyAppError::io(&manifest_path, source))?;
     let updated = ensure_crate_type_section(&manifest);
     if updated != manifest {
-        fs::write(&manifest_path, updated).map_err(|source| HarmonyAppError::io(&manifest_path, source))?;
+        fs::write(&manifest_path, updated)
+            .map_err(|source| HarmonyAppError::io(&manifest_path, source))?;
     }
     Ok(())
 }
@@ -74,13 +75,15 @@ fn resolve_manifest_path(common: &CommonArgs, cwd: &Path) -> Result<std::path::P
 }
 
 fn ensure_crate_type_section(manifest: &str) -> String {
-    let newline = if manifest.contains("\r\n") { "\r\n" } else { "\n" };
+    let newline = if manifest.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
     let desired = r#"crate-type = ["staticlib", "rlib"]"#;
     let lines = lines_with_offsets(manifest);
 
-    let lib_header = lines
-        .iter()
-        .position(|line| line.text.trim() == "[lib]");
+    let lib_header = lines.iter().position(|line| line.text.trim() == "[lib]");
 
     if let Some(lib_header_index) = lib_header {
         let section_end = lines
@@ -206,7 +209,9 @@ name = "demo"
 
         let updated = ensure_crate_type_section(manifest);
 
-        assert!(updated.contains("[lib]\ncrate-type = [\"staticlib\", \"rlib\"]\nname = \"demo\"\n"));
+        assert!(
+            updated.contains("[lib]\ncrate-type = [\"staticlib\", \"rlib\"]\nname = \"demo\"\n")
+        );
     }
 
     #[test]

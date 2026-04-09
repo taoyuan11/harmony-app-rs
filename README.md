@@ -9,14 +9,7 @@
 - `cargo ohos-app package`
 
 `package` 默认产出 `.hap`，可通过 `--artifact app` 切换为 `.app`。
-也支持通过 `--abi arm64-v8a|armeabi-v7a|x86_64|loongarch64` 切换目标架构；例如模拟器可用 `--abi x86_64`。
-
-默认针对当前机器上的以下环境：
-
-- DevEco Studio: `D:\Apps\code\DevEco Studio`
-- `ohpm`: `D:\Apps\code\DevEco Studio\tools\ohpm\bin\ohpm.bat`
-- OpenHarmony SDK 根目录: `C:\Users\25422\AppData\Local\OpenHarmony\Sdk`
-- 自动选择最新已安装 SDK 版本
+也支持通过 `--target arm64-v8a|armeabi-v7a|x86_64|loongarch64` 切换目标架构；例如模拟器可用 `--target x86_64`。
 
 ## Rust 侧约定
 
@@ -67,7 +60,7 @@ cd examples/counter-native
 cargo run -- init
 cargo run -- build
 cargo run -- package
-cargo run -- package --abi x86_64
+cargo run -- package --target x86_64
 ```
 
 推荐的 `tgui-winit-ohos` 联调与打包示例位于 [examples/winit-smoke](examples/winit-smoke)，默认面向
@@ -87,7 +80,7 @@ cargo ohos-app package --manifest-path .\examples\winit-smoke\Cargo.toml
 如需覆盖默认目标，例如切到设备 ABI：
 
 ```powershell
-cargo ohos-app package --manifest-path .\examples\winit-smoke\Cargo.toml --abi arm64-v8a
+cargo ohos-app package --manifest-path .\examples\winit-smoke\Cargo.toml --target arm64-v8a
 ```
 
 本地开发时也可以直接安装当前仓库：
@@ -98,15 +91,52 @@ cargo install --path .
 
 ## 配置
 
-如果项目根目录下存在 `ohos-app.toml`，会作为默认值来源。
-也兼容旧文件名 `harmony-app.toml`。支持字段：
+项目配置写在 `Cargo.toml` 的 `package.metadata.ohos-app` 中，支持 `default`、`debug`、`release` 三层：
+
+```toml
+[package.metadata.ohos-app.default]
+deveco_studio_dir = "D:\\Apps\\code\\DevEco Studio"
+ohpm_path = "D:\\Apps\\code\\DevEco Studio\\tools\\ohpm\\bin\\ohpm.bat"
+sdk_root = "C:\\Users\\your-user\\AppData\\Local\\OpenHarmony\\Sdk"
+version_name = "1.0.0"
+version_code = 1
+app_name = "Demo App"
+app_icon_path = "assets/app-icon.png"
+start_icon_path = "assets/start-icon.png"
+bundle_name = "com.example.demo"
+module_name = "entry"
+target = "arm64-v8a"
+output_dir = "ohos-app"
+
+[package.metadata.ohos-app.debug]
+output_dir = "ohos-app-debug"
+
+[package.metadata.ohos-app.release]
+output_dir = "ohos-app-release"
+profile = "release"
+```
+
+支持字段：
 
 - `deveco_studio_dir`
 - `ohpm_path`
 - `sdk_root`
 - `sdk_version`
+- `version_name`
+- `version_code`
+- `app_name`
+- `app_icon_path`
+- `start_icon_path`
 - `bundle_name`
 - `module_name`
 - `target`
 - `profile`
 - `output_dir`
+
+优先级为：CLI 参数 > 环境变量 > `Cargo.toml` metadata > 内置默认值。
+
+其中以下三项没有内置默认值，缺失时会直接报错并停止执行：
+
+- `deveco_studio_dir`
+- `ohpm_path`
+- `sdk_root`

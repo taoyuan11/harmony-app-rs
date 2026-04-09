@@ -1,7 +1,7 @@
 [package]
 name = "cargo-ohos-app"
 authors = ["a2542209451@gmail.com"]
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 description = "Cargo subcommand for packaging Rust GUI apps as OHOS applications"
 license = "Apache-2.0"

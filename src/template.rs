@@ -8,6 +8,8 @@ use crate::errors::{HarmonyAppError, Result};
 pub struct TemplateContext {
     pub app_name: String,
     pub bundle_name: String,
+    pub version_name: String,
+    pub version_code: u32,
     pub module_name: String,
     pub sdk_api_version: String,
     pub sdk_display_version: String,
@@ -26,8 +28,10 @@ pub struct GeneratedFile {
 
 pub fn template_context(app: &AppContext) -> TemplateContext {
     TemplateContext {
-        app_name: app.project.package_name.clone(),
+        app_name: app.config.app_name.clone(),
         bundle_name: app.config.bundle_name.clone(),
+        version_name: app.config.version_name.clone(),
+        version_code: app.config.version_code,
         module_name: app.config.module_name.clone(),
         sdk_api_version: app.sdk.version.clone(),
         sdk_display_version: app.sdk.display_version.clone(),
@@ -71,17 +75,27 @@ pub fn write_shell_project(app: &AppContext) -> Result<()> {
         fs::write(&target_path, file.contents)
             .map_err(|source| HarmonyAppError::io(&target_path, source))?;
     }
+    let app_icon_bytes = if let Some(icon_path) = app.config.app_icon_path.as_ref() {
+        fs::read(icon_path).map_err(|source| HarmonyAppError::io(icon_path, source))?
+    } else {
+        ICON_PNG_BYTES.to_vec()
+    };
+    let start_icon_bytes = if let Some(icon_path) = app.config.start_icon_path.as_ref() {
+        fs::read(icon_path).map_err(|source| HarmonyAppError::io(icon_path, source))?
+    } else {
+        app_icon_bytes.clone()
+    };
     write_binary_asset(
         &output_dir.join("AppScope/resources/base/media/background.png"),
-        ICON_PNG_BYTES,
+        &app_icon_bytes,
     )?;
     write_binary_asset(
         &output_dir.join("AppScope/resources/base/media/foreground.png"),
-        ICON_PNG_BYTES,
+        &app_icon_bytes,
     )?;
     write_binary_asset(
         &output_dir.join("entry/src/main/resources/base/media/startIcon.png"),
-        ICON_PNG_BYTES,
+        &start_icon_bytes,
     )?;
 
     let libs_dir = output_dir
@@ -118,6 +132,8 @@ fn render_template(template: &str, context: &TemplateContext) -> String {
     template
         .replace("{{APP_NAME}}", &context.app_name)
         .replace("{{BUNDLE_NAME}}", &context.bundle_name)
+        .replace("{{VERSION_NAME}}", &context.version_name)
+        .replace("{{VERSION_CODE}}", &context.version_code.to_string())
         .replace("{{MODULE_NAME}}", &context.module_name)
         .replace("{{SDK_API_VERSION}}", &context.sdk_api_version)
         .replace("{{SDK_DISPLAY_VERSION}}", &context.sdk_display_version)
@@ -148,8 +164,8 @@ const TEMPLATE_FILES: &[(&str, &str)] = &[
   "app": {
     "bundleName": "{{BUNDLE_NAME}}",
     "vendor": "example",
-    "versionCode": 1000000,
-    "versionName": "1.0.0",
+    "versionCode": {{VERSION_CODE}},
+    "versionName": "{{VERSION_NAME}}",
     "icon": "$media:layered_image",
     "label": "$string:app_name"
   }
@@ -1124,13 +1140,23 @@ const ICON_PNG_BYTES: &[u8] = &[
 
 #[cfg(test)]
 mod tests {
-    use super::{TemplateContext, generated_files};
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use crate::config::ResolvedConfig;
+    use crate::project::{MetadataConfig, ProjectInfo};
+    use crate::sdk::{HvigorInfo, SdkInfo};
+
+    use super::{AppContext, TemplateContext, generated_files, write_shell_project};
 
     #[test]
     fn renders_bundle_and_module_names() {
         let files = generated_files(&TemplateContext {
             app_name: "demo".to_string(),
             bundle_name: "com.example.demo".to_string(),
+            version_name: "1.2.3".to_string(),
+            version_code: 42,
             module_name: "entry".to_string(),
             sdk_api_version: "20".to_string(),
             sdk_display_version: "6.0.0(20)".to_string(),
@@ -1145,6 +1171,9 @@ mod tests {
             .find(|file| file.relative_path == "AppScope/app.json5")
             .unwrap();
         assert!(app_json.contents.contains("com.example.demo"));
+        assert!(app_json.contents.contains("$string:app_name"));
+        assert!(app_json.contents.contains("\"versionCode\": 42"));
+        assert!(app_json.contents.contains("\"versionName\": \"1.2.3\""));
     }
 
     #[test]
@@ -1152,6 +1181,8 @@ mod tests {
         let files = generated_files(&TemplateContext {
             app_name: "demo".to_string(),
             bundle_name: "com.example.demo".to_string(),
+            version_name: "1.2.3".to_string(),
+            version_code: 42,
             module_name: "entry".to_string(),
             sdk_api_version: "20".to_string(),
             sdk_display_version: "6.0.0(20)".to_string(),
@@ -1186,6 +1217,74 @@ mod tests {
             bridge
                 .contents
                 .contains("OH_NativeXComponent_RegisterCallback")
+        );
+    }
+
+    #[test]
+    fn writes_custom_icon_when_configured() {
+        let temp = TempDir::new().unwrap();
+        let app_icon_path = temp.path().join("icon.png");
+        let start_icon_path = temp.path().join("start-icon.png");
+        let output_dir = temp.path().join("ohos-app");
+        let hvigor_root = temp.path().join("hvigor");
+        fs::create_dir_all(&hvigor_root).unwrap();
+        fs::write(&app_icon_path, [9_u8, 8, 7, 6]).unwrap();
+        fs::write(&start_icon_path, [1_u8, 2, 3, 4]).unwrap();
+        fs::write(hvigor_root.join("hvigorw.bat"), "@echo off\r\n").unwrap();
+        fs::write(hvigor_root.join("hvigorw.js"), "console.log('hvigor');\n").unwrap();
+
+        let app = AppContext {
+            project: ProjectInfo {
+                manifest_path: temp.path().join("Cargo.toml"),
+                project_dir: temp.path().to_path_buf(),
+                package_name: "demo-app".to_string(),
+                package_version: "0.1.0".to_string(),
+                lib_name: "demo_app".to_string(),
+                target_dir: temp.path().join("target"),
+                uses_winit_ohos: false,
+                metadata_config: MetadataConfig::default(),
+            },
+            config: ResolvedConfig {
+                deveco_studio_dir: temp.path().join("deveco"),
+                ohpm_path: temp.path().join("ohpm.bat"),
+                sdk_root: temp.path().join("sdk"),
+                sdk_version: Some("20".to_string()),
+                version_name: "1.2.3".to_string(),
+                version_code: 42,
+                app_name: "Demo".to_string(),
+                app_icon_path: Some(app_icon_path.clone()),
+                start_icon_path: Some(start_icon_path.clone()),
+                target: "aarch64-unknown-linux-ohos".to_string(),
+                abi: "arm64-v8a".to_string(),
+                profile_dir: "debug".to_string(),
+                output_dir: output_dir.clone(),
+                bundle_name: "com.example.demo".to_string(),
+                module_name: "entry".to_string(),
+            },
+            sdk: SdkInfo {
+                version: "20".to_string(),
+                display_version: "6.0.0(20)".to_string(),
+                root: temp.path().join("sdk"),
+                version_dir: temp.path().join("sdk/20"),
+                native_dir: temp.path().join("sdk/20/native"),
+                toolchains_dir: temp.path().join("sdk/20/toolchains"),
+            },
+            hvigor: HvigorInfo {
+                wrapper_bat: hvigor_root.join("hvigorw.bat"),
+                wrapper_js: hvigor_root.join("hvigorw.js"),
+                hvigor_package_dir: hvigor_root.clone(),
+                hvigor_plugin_package_dir: hvigor_root,
+            },
+        };
+
+        write_shell_project(&app).unwrap();
+        assert_eq!(
+            fs::read(output_dir.join("AppScope/resources/base/media/background.png")).unwrap(),
+            vec![9_u8, 8, 7, 6]
+        );
+        assert_eq!(
+            fs::read(output_dir.join("entry/src/main/resources/base/media/startIcon.png")).unwrap(),
+            vec![1_u8, 2, 3, 4]
         );
     }
 }
