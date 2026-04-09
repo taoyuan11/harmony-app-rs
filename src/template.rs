@@ -678,7 +678,9 @@ export default class EntryAbility extends UIAbility {
     ),
     (
         "entry/src/main/ets/pages/Index.ets",
-        r#"@Entry
+        r#"import 'libentry.so';
+
+@Entry
 @Component
 struct Index {
   build() {
@@ -1164,6 +1166,7 @@ mod tests {
             .iter()
             .find(|file| file.relative_path == "entry/src/main/ets/pages/Index.ets")
             .unwrap();
+        assert!(page.contents.contains("import 'libentry.so';"));
         assert!(page.contents.contains("XComponent"));
         assert!(page.contents.contains("libraryname: 'entry'"));
 
