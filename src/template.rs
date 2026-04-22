@@ -694,11 +694,21 @@ export default class EntryAbility extends UIAbility {
     ),
     (
         "entry/src/main/ets/pages/Index.ets",
-        r#"import 'libentry.so';
+        r#"import bridge from 'libentry.so';
 
 @Entry
 @Component
 struct Index {
+  aboutToAppear(): void {
+    const hostContext = this.getUIContext().getHostContext() as
+      | { config?: { fontSizeScale?: number } }
+      | undefined;
+    const fontScale = hostContext?.config?.fontSizeScale;
+    bridge.setFontScale(
+      typeof fontScale === 'number' && Number.isFinite(fontScale) && fontScale > 0 ? fontScale : 1.0
+    );
+  }
+
   build() {
     Stack() {
       XComponent({
@@ -753,6 +763,7 @@ target_link_libraries(entry PUBLIC
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cmath>
 #include <mutex>
 
 #include <ace/xcomponent/native_interface_xcomponent.h>
@@ -766,7 +777,8 @@ void ohos_winit_runtime_surface_created(
     void* native_window,
     uint32_t width,
     uint32_t height,
-    double scale_factor
+    double scale_factor,
+    double font_scale
 );
 void ohos_winit_runtime_surface_changed(
     const void* runtime,
@@ -774,7 +786,8 @@ void ohos_winit_runtime_surface_changed(
     void* native_window,
     uint32_t width,
     uint32_t height,
-    double scale_factor
+    double scale_factor,
+    double font_scale
 );
 void ohos_winit_runtime_surface_destroyed(const void* runtime);
 void ohos_winit_runtime_focus(const void* runtime, bool focused);
@@ -820,6 +833,11 @@ std::mutex g_runtime_mutex;
 void* g_runtime = nullptr;
 float g_last_mouse_x = 0.0f;
 float g_last_mouse_y = 0.0f;
+double g_font_scale = 1.0;
+OH_NativeXComponent* g_last_xcomponent = nullptr;
+void* g_last_native_window = nullptr;
+uint32_t g_last_surface_width = 0;
+uint32_t g_last_surface_height = 0;
 
 void* EnsureRuntime()
 {
@@ -910,18 +928,36 @@ uint32_t MapKeyAction(OH_NativeXComponent_KeyAction action)
     }
 }
 
+double NormalizeFontScale(double fontScale)
+{
+    if (std::isfinite(fontScale) && fontScale > 0.0) {
+        return fontScale;
+    }
+    return 1.0;
+}
+
+void CacheSurfaceState(OH_NativeXComponent* component, void* window, uint32_t width, uint32_t height)
+{
+    g_last_xcomponent = component;
+    g_last_native_window = window;
+    g_last_surface_width = width;
+    g_last_surface_height = height;
+}
+
 void OnSurfaceCreated(OH_NativeXComponent* component, void* window)
 {
     uint64_t width = 0;
     uint64_t height = 0;
     OH_NativeXComponent_GetXComponentSize(component, window, &width, &height);
+    CacheSurfaceState(component, window, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
     ohos_winit_runtime_surface_created(
         EnsureRuntime(),
         component,
         window,
         static_cast<uint32_t>(width),
         static_cast<uint32_t>(height),
-        1.0);
+        1.0,
+        g_font_scale);
 }
 
 void OnSurfaceChanged(OH_NativeXComponent* component, void* window)
@@ -929,19 +965,25 @@ void OnSurfaceChanged(OH_NativeXComponent* component, void* window)
     uint64_t width = 0;
     uint64_t height = 0;
     OH_NativeXComponent_GetXComponentSize(component, window, &width, &height);
+    CacheSurfaceState(component, window, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
     ohos_winit_runtime_surface_changed(
         EnsureRuntime(),
         component,
         window,
         static_cast<uint32_t>(width),
         static_cast<uint32_t>(height),
-        1.0);
+        1.0,
+        g_font_scale);
 }
 
 void OnSurfaceDestroyed(OH_NativeXComponent* component, void* window)
 {
     (void)component;
     (void)window;
+    g_last_xcomponent = nullptr;
+    g_last_native_window = nullptr;
+    g_last_surface_width = 0;
+    g_last_surface_height = 0;
     ohos_winit_runtime_surface_destroyed(EnsureRuntime());
 }
 
@@ -1104,8 +1146,42 @@ void RegisterXComponentCallbacks(napi_env env, napi_value exports)
     OH_NativeXComponent_RegisterOnFrameCallback(nativeXComponent, OnFrame);
 }
 
+napi_value SetFontScale(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc != 1) {
+        return nullptr;
+    }
+
+    double fontScale = 1.0;
+    if (napi_get_value_double(env, args[0], &fontScale) != napi_ok) {
+        return nullptr;
+    }
+
+    g_font_scale = NormalizeFontScale(fontScale);
+    if (g_last_xcomponent != nullptr && g_last_native_window != nullptr) {
+        ohos_winit_runtime_surface_changed(
+            EnsureRuntime(),
+            g_last_xcomponent,
+            g_last_native_window,
+            g_last_surface_width,
+            g_last_surface_height,
+            1.0,
+            g_font_scale);
+    }
+
+    napi_value result = nullptr;
+    napi_get_undefined(env, &result);
+    return result;
+}
+
 napi_value Init(napi_env env, napi_value exports)
 {
+    napi_property_descriptor descriptors[] = {
+        { "setFontScale", nullptr, SetFontScale, nullptr, nullptr, nullptr, napi_default, nullptr },
+    };
+    napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
     RegisterXComponentCallbacks(env, exports);
     return exports;
 }
@@ -1126,6 +1202,15 @@ extern "C" __attribute__((constructor)) void RegisterCargoOhosAppModule(void)
 {
     napi_module_register(&cargoOhosAppModule);
 }
+"#,
+    ),
+    (
+        "entry/src/main/cpp/types/libentry/index.d.ts",
+        r#"declare const bridge: {
+  setFontScale(fontScale: number): void;
+};
+
+export default bridge;
 "#,
     ),
 ];
@@ -1197,9 +1282,11 @@ mod tests {
             .iter()
             .find(|file| file.relative_path == "entry/src/main/ets/pages/Index.ets")
             .unwrap();
-        assert!(page.contents.contains("import 'libentry.so';"));
+        assert!(page.contents.contains("import bridge from 'libentry.so';"));
         assert!(page.contents.contains("XComponent"));
         assert!(page.contents.contains("libraryname: 'entry'"));
+        assert!(page.contents.contains("fontSizeScale"));
+        assert!(page.contents.contains("bridge.setFontScale"));
 
         let ability = files
             .iter()
@@ -1213,6 +1300,8 @@ mod tests {
             .find(|file| file.relative_path == "entry/src/main/cpp/napi_init.cpp")
             .unwrap();
         assert!(bridge.contents.contains("ohos_winit_runtime_new"));
+        assert!(bridge.contents.contains("double font_scale"));
+        assert!(bridge.contents.contains("SetFontScale"));
         assert!(
             bridge
                 .contents
