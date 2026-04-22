@@ -12,4 +12,5 @@ add_library(entry SHARED napi_init.cpp)
 set_target_properties(entry PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/out
 )
-target_link_libraries(entry PUBLIC libace_napi.z.so rust_bridge)
+find_library(HILOG_LIB hilog_ndk.z)
+target_link_libraries(entry PUBLIC libace_napi.z.so rust_bridge ${HILOG_LIB})

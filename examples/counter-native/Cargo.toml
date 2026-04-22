@@ -3,14 +3,15 @@ name = "counter-native"
 version = "0.1.0"
 edition = "2024"
 
-[package.metadata.ohos-app.default]
-version_name = "0.1.0"
-version_code = 1
-app_name = "Counter Native"
-bundle_name = "com.example.counternative"
-module_name = "entry"
-target = "arm64-v8a"
-output_dir = "ohos-app"
-
 [lib]
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["staticlib", "rlib"]
+
+[package.metadata.ohos-app.default]
+deveco_studio_dir = "D:\\Apps\\code\\DevEco Studio"
+ohpm_path = "D:\\Apps\\code\\DevEco Studio\\tools\\ohpm\\bin\\ohpm.bat"
+sdk_root = "C:\\Users\\25422\\AppData\\Local\\OpenHarmony\\Sdk"
+app_name = "counter"
+bundle_name = "com.sctianji.counter"
+module_name = "entry"
+target = "x86_64"
+output_dir = "ohos-app"

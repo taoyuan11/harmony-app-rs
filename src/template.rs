@@ -572,17 +572,65 @@ add_library(entry SHARED napi_init.cpp)
 set_target_properties(entry PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/out
 )
-target_link_libraries(entry PUBLIC libace_napi.z.so rust_bridge)
+find_library(HILOG_LIB hilog_ndk.z)
+target_link_libraries(entry PUBLIC libace_napi.z.so rust_bridge ${HILOG_LIB})
 "#,
     ),
     (
         "entry/src/main/cpp/napi_init.cpp",
-        r#"#include <napi/native_api.h>
+        r#"#include <hilog/log.h>
+#include <napi/native_api.h>
 #include <stdint.h>
 
 extern "C" {
 const char* ohos_app_get_message();
 uint32_t ohos_app_increment_counter();
+}
+
+namespace {
+
+constexpr unsigned int DEFAULT_LOG_DOMAIN = 0x3433;
+constexpr const char* DEFAULT_LOG_TAG = "rust";
+
+LogLevel NormalizeLogLevel(uint32_t level)
+{
+    switch (level) {
+        case LOG_DEBUG:
+            return LOG_DEBUG;
+        case LOG_INFO:
+            return LOG_INFO;
+        case LOG_WARN:
+            return LOG_WARN;
+        case LOG_ERROR:
+            return LOG_ERROR;
+        case LOG_FATAL:
+            return LOG_FATAL;
+        default:
+            return LOG_INFO;
+    }
+}
+
+unsigned int NormalizeLogDomain(uint32_t domain)
+{
+    return domain <= 0xFFFF ? domain : DEFAULT_LOG_DOMAIN;
+}
+
+const char* SafeString(const char* value, const char* fallback)
+{
+    return value != nullptr && value[0] != '\0' ? value : fallback;
+}
+
+} // namespace
+
+extern "C" int cargo_ohos_app_hilog(uint32_t level, uint32_t domain, const char* tag, const char* message)
+{
+    return OH_LOG_Print(
+        LOG_APP,
+        NormalizeLogLevel(level),
+        NormalizeLogDomain(domain),
+        SafeString(tag, DEFAULT_LOG_TAG),
+        "%{public}s",
+        SafeString(message, ""));
 }
 
 static napi_value GetMessage(napi_env env, napi_callback_info info)
@@ -654,10 +702,18 @@ const WINIT_TEMPLATE_OVERRIDES: &[(&str, &str)] = &[
         r#"import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import bridge from 'libentry.so';
 
 const DOMAIN = 0x3433;
+const BASE_DENSITY = 160.0;
 
 export default class EntryAbility extends UIAbility {
+  private mainWindow?: window.Window;
+
+  private readonly onSystemDensityChange = (density: number): void => {
+    bridge.setScaleFactor(this.normalizeDensityScale(density));
+  };
+
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, 'cargo-ohos-app', '%{public}s', 'Ability onCreate');
   }
@@ -665,6 +721,9 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     try {
       const mainWindow = windowStage.getMainWindowSync();
+      this.mainWindow = mainWindow;
+      this.syncDensityScale(mainWindow);
+      mainWindow.on('systemDensityChange', this.onSystemDensityChange);
       mainWindow.setWindowLayoutFullScreen(true)
         .then(() => mainWindow.setWindowSystemBarEnable([]))
         .catch((err: Error) => {
@@ -689,6 +748,50 @@ export default class EntryAbility extends UIAbility {
         hilog.error(DOMAIN, 'cargo-ohos-app', 'Failed to load page: %{public}s', JSON.stringify(err));
       }
     });
+  }
+
+  onWindowStageDestroy(): void {
+    if (this.mainWindow !== undefined) {
+      try {
+        this.mainWindow.off('systemDensityChange', this.onSystemDensityChange);
+      } catch (err) {
+        hilog.error(
+          DOMAIN,
+          'cargo-ohos-app',
+          'Failed to unregister density listener: %{public}s',
+          JSON.stringify(err)
+        );
+      }
+      this.mainWindow = undefined;
+    }
+  }
+
+  private syncDensityScale(mainWindow: window.Window): void {
+    try {
+      const densityInfo = mainWindow.getWindowDensityInfo();
+      bridge.setScaleFactor(
+        this.normalizeDensityScale(
+          densityInfo.customDensity > 0
+            ? densityInfo.customDensity
+            : (densityInfo.systemDensity > 0 ? densityInfo.systemDensity : densityInfo.defaultDensity)
+        )
+      );
+    } catch (err) {
+      hilog.error(
+        DOMAIN,
+        'cargo-ohos-app',
+        'Failed to read window density: %{public}s',
+        JSON.stringify(err)
+      );
+      bridge.setScaleFactor(1.0);
+    }
+  }
+
+  private normalizeDensityScale(density: number): number {
+    if (typeof density === 'number' && Number.isFinite(density) && density > 0) {
+      return density / BASE_DENSITY;
+    }
+    return 1.0;
   }
 }
 "#,
@@ -742,6 +845,7 @@ set_target_properties(rust_bridge PROPERTIES
 
 find_library(ACE_NDK_LIB ace_ndk.z)
 find_library(ACE_NAPI_LIB ace_napi.z)
+find_library(HILOG_LIB hilog_ndk.z)
 find_library(UV_LIB uv)
 
 add_library(entry SHARED napi_init.cpp)
@@ -752,6 +856,7 @@ target_link_libraries(entry PUBLIC
     rust_bridge
     ${ACE_NDK_LIB}
     ${ACE_NAPI_LIB}
+    ${HILOG_LIB}
     ${UV_LIB}
     libnative_window.so
 )
@@ -759,12 +864,14 @@ target_link_libraries(entry PUBLIC
     ),
     (
         "entry/src/main/cpp/napi_init.cpp",
-        r#"#include <napi/native_api.h>
+        r#"#include <hilog/log.h>
+#include <napi/native_api.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include <cmath>
 #include <mutex>
+#include <vector>
 
 #include <ace/xcomponent/native_interface_xcomponent.h>
 
@@ -794,6 +901,7 @@ void ohos_winit_runtime_focus(const void* runtime, bool focused);
 void ohos_winit_runtime_visibility(const void* runtime, bool visible);
 void ohos_winit_runtime_low_memory(const void* runtime);
 void ohos_winit_runtime_frame(const void* runtime);
+void ohos_winit_runtime_log(const char* message);
 void ohos_winit_runtime_key(
     const void* runtime,
     uint32_t action,
@@ -829,10 +937,14 @@ void ohos_winit_runtime_mouse(
 
 namespace {
 
+constexpr unsigned int DEFAULT_LOG_DOMAIN = 0x3433;
+constexpr const char* DEFAULT_LOG_TAG = "rust";
+
 std::mutex g_runtime_mutex;
 void* g_runtime = nullptr;
 float g_last_mouse_x = 0.0f;
 float g_last_mouse_y = 0.0f;
+double g_scale_factor = 1.0;
 double g_font_scale = 1.0;
 OH_NativeXComponent* g_last_xcomponent = nullptr;
 void* g_last_native_window = nullptr;
@@ -928,12 +1040,40 @@ uint32_t MapKeyAction(OH_NativeXComponent_KeyAction action)
     }
 }
 
-double NormalizeFontScale(double fontScale)
+double NormalizePositiveValue(double value)
 {
-    if (std::isfinite(fontScale) && fontScale > 0.0) {
-        return fontScale;
+    if (std::isfinite(value) && value > 0.0) {
+        return value;
     }
     return 1.0;
+}
+
+LogLevel NormalizeLogLevel(uint32_t level)
+{
+    switch (level) {
+        case LOG_DEBUG:
+            return LOG_DEBUG;
+        case LOG_INFO:
+            return LOG_INFO;
+        case LOG_WARN:
+            return LOG_WARN;
+        case LOG_ERROR:
+            return LOG_ERROR;
+        case LOG_FATAL:
+            return LOG_FATAL;
+        default:
+            return LOG_INFO;
+    }
+}
+
+unsigned int NormalizeLogDomain(uint32_t domain)
+{
+    return domain <= 0xFFFF ? domain : DEFAULT_LOG_DOMAIN;
+}
+
+const char* SafeString(const char* value, const char* fallback)
+{
+    return value != nullptr && value[0] != '\0' ? value : fallback;
 }
 
 void CacheSurfaceState(OH_NativeXComponent* component, void* window, uint32_t width, uint32_t height)
@@ -956,7 +1096,7 @@ void OnSurfaceCreated(OH_NativeXComponent* component, void* window)
         window,
         static_cast<uint32_t>(width),
         static_cast<uint32_t>(height),
-        1.0,
+        g_scale_factor,
         g_font_scale);
 }
 
@@ -972,7 +1112,7 @@ void OnSurfaceChanged(OH_NativeXComponent* component, void* window)
         window,
         static_cast<uint32_t>(width),
         static_cast<uint32_t>(height),
-        1.0,
+        g_scale_factor,
         g_font_scale);
 }
 
@@ -1146,6 +1286,17 @@ void RegisterXComponentCallbacks(napi_env env, napi_value exports)
     OH_NativeXComponent_RegisterOnFrameCallback(nativeXComponent, OnFrame);
 }
 
+extern "C" int cargo_ohos_app_hilog(uint32_t level, uint32_t domain, const char* tag, const char* message)
+{
+    return OH_LOG_Print(
+        LOG_APP,
+        NormalizeLogLevel(level),
+        NormalizeLogDomain(domain),
+        SafeString(tag, DEFAULT_LOG_TAG),
+        "%{public}s",
+        SafeString(message, ""));
+}
+
 napi_value SetFontScale(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -1159,7 +1310,7 @@ napi_value SetFontScale(napi_env env, napi_callback_info info)
         return nullptr;
     }
 
-    g_font_scale = NormalizeFontScale(fontScale);
+    g_font_scale = NormalizePositiveValue(fontScale);
     if (g_last_xcomponent != nullptr && g_last_native_window != nullptr) {
         ohos_winit_runtime_surface_changed(
             EnsureRuntime(),
@@ -1167,7 +1318,62 @@ napi_value SetFontScale(napi_env env, napi_callback_info info)
             g_last_native_window,
             g_last_surface_width,
             g_last_surface_height,
-            1.0,
+            g_scale_factor,
+            g_font_scale);
+    }
+
+    napi_value result = nullptr;
+    napi_get_undefined(env, &result);
+    return result;
+}
+
+napi_value PrintRustLog(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc != 1) {
+        return nullptr;
+    }
+
+    size_t length = 0;
+    if (napi_get_value_string_utf8(env, args[0], nullptr, 0, &length) != napi_ok) {
+        return nullptr;
+    }
+
+    std::vector<char> message(length + 1, '\0');
+    if (napi_get_value_string_utf8(env, args[0], message.data(), message.size(), &length) != napi_ok) {
+        return nullptr;
+    }
+
+    ohos_winit_runtime_log(message.data());
+
+    napi_value result = nullptr;
+    napi_get_undefined(env, &result);
+    return result;
+}
+
+napi_value SetScaleFactor(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc != 1) {
+        return nullptr;
+    }
+
+    double scaleFactor = 1.0;
+    if (napi_get_value_double(env, args[0], &scaleFactor) != napi_ok) {
+        return nullptr;
+    }
+
+    g_scale_factor = NormalizePositiveValue(scaleFactor);
+    if (g_last_xcomponent != nullptr && g_last_native_window != nullptr) {
+        ohos_winit_runtime_surface_changed(
+            EnsureRuntime(),
+            g_last_xcomponent,
+            g_last_native_window,
+            g_last_surface_width,
+            g_last_surface_height,
+            g_scale_factor,
             g_font_scale);
     }
 
@@ -1179,6 +1385,8 @@ napi_value SetFontScale(napi_env env, napi_callback_info info)
 napi_value Init(napi_env env, napi_value exports)
 {
     napi_property_descriptor descriptors[] = {
+        { "printRustLog", nullptr, PrintRustLog, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setScaleFactor", nullptr, SetScaleFactor, nullptr, nullptr, nullptr, napi_default, nullptr },
         { "setFontScale", nullptr, SetFontScale, nullptr, nullptr, nullptr, napi_default, nullptr },
     };
     napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
@@ -1207,6 +1415,8 @@ extern "C" __attribute__((constructor)) void RegisterCargoOhosAppModule(void)
     (
         "entry/src/main/cpp/types/libentry/index.d.ts",
         r#"declare const bridge: {
+  printRustLog(message: string): void;
+  setScaleFactor(scaleFactor: number): void;
   setFontScale(fontScale: number): void;
 };
 
@@ -1259,6 +1469,20 @@ mod tests {
         assert!(app_json.contents.contains("$string:app_name"));
         assert!(app_json.contents.contains("\"versionCode\": 42"));
         assert!(app_json.contents.contains("\"versionName\": \"1.2.3\""));
+
+        let cmake = files
+            .iter()
+            .find(|file| file.relative_path == "entry/src/main/cpp/CMakeLists.txt")
+            .unwrap();
+        assert!(cmake.contents.contains("hilog_ndk.z"));
+
+        let bridge = files
+            .iter()
+            .find(|file| file.relative_path == "entry/src/main/cpp/napi_init.cpp")
+            .unwrap();
+        assert!(bridge.contents.contains("#include <hilog/log.h>"));
+        assert!(bridge.contents.contains("cargo_ohos_app_hilog"));
+        assert!(bridge.contents.contains("OH_LOG_Print"));
     }
 
     #[test]
@@ -1294,13 +1518,22 @@ mod tests {
             .unwrap();
         assert!(ability.contents.contains("setWindowLayoutFullScreen(true)"));
         assert!(ability.contents.contains("setWindowSystemBarEnable([])"));
+        assert!(ability.contents.contains("bridge.setScaleFactor"));
+        assert!(ability.contents.contains("systemDensityChange"));
 
         let bridge = files
             .iter()
             .find(|file| file.relative_path == "entry/src/main/cpp/napi_init.cpp")
             .unwrap();
         assert!(bridge.contents.contains("ohos_winit_runtime_new"));
+        assert!(bridge.contents.contains("double g_scale_factor"));
         assert!(bridge.contents.contains("double font_scale"));
+        assert!(bridge.contents.contains("#include <hilog/log.h>"));
+        assert!(bridge.contents.contains("cargo_ohos_app_hilog"));
+        assert!(bridge.contents.contains("PrintRustLog"));
+        assert!(bridge.contents.contains("ohos_winit_runtime_log"));
+        assert!(bridge.contents.contains("SetScaleFactor"));
+        assert!(bridge.contents.contains("g_scale_factor = NormalizePositiveValue(scaleFactor)"));
         assert!(bridge.contents.contains("SetFontScale"));
         assert!(
             bridge

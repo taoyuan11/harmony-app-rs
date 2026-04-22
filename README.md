@@ -51,6 +51,50 @@ export_ohos_winit_app!(MyApp::default);
 生成的壳会自动把 surface、focus、visibility、frame、touch、mouse、key 回调转发到
 `tgui-winit-ohos` 的运行时桥接层。
 
+## 在 Rust 中打印 DevEco 日志
+
+生成的 `libentry.so` 壳现在会导出一个原生日志桥：
+
+```cpp
+int cargo_ohos_app_hilog(uint32_t level, uint32_t domain, const char* tag, const char* message);
+```
+
+你可以在 Rust 里直接声明它，然后把日志打到 OHOS `hilog`，在 DevEco Studio 的 Log 面板中查看：
+
+```rust
+use std::ffi::{CString, c_char, c_int};
+
+const LOG_INFO: u32 = 4;
+const LOG_DOMAIN: u32 = 0x3433;
+
+unsafe extern "C" {
+    fn cargo_ohos_app_hilog(
+        level: u32,
+        domain: u32,
+        tag: *const c_char,
+        message: *const c_char,
+    ) -> c_int;
+}
+
+pub fn ohos_log_info(tag: &str, message: &str) {
+    let tag = CString::new(tag.replace('\0', " ")).unwrap();
+    let message = CString::new(message.replace('\0', " ")).unwrap();
+    unsafe {
+        let _ = cargo_ohos_app_hilog(LOG_INFO, LOG_DOMAIN, tag.as_ptr(), message.as_ptr());
+    }
+}
+```
+
+`level` 对应 OHOS `LogLevel`：
+
+- `3`: `DEBUG`
+- `4`: `INFO`
+- `5`: `WARN`
+- `6`: `ERROR`
+- `7`: `FATAL`
+
+完整可运行示例见 [examples/counter-native/src/lib.rs](examples/counter-native/src/lib.rs)。
+
 ## 快速开始
 
 最小 C ABI 示例位于 [examples/counter-native](examples/counter-native)。

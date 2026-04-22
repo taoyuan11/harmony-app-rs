@@ -75,7 +75,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-ohos-app"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "cargo_metadata",
  "clap",

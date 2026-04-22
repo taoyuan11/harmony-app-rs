@@ -1,9 +1,56 @@
+#include <hilog/log.h>
 #include <napi/native_api.h>
 #include <stdint.h>
 
 extern "C" {
 const char* ohos_app_get_message();
 uint32_t ohos_app_increment_counter();
+}
+
+namespace {
+
+constexpr unsigned int DEFAULT_LOG_DOMAIN = 0x3433;
+constexpr const char* DEFAULT_LOG_TAG = "rust";
+
+LogLevel NormalizeLogLevel(uint32_t level)
+{
+    switch (level) {
+        case LOG_DEBUG:
+            return LOG_DEBUG;
+        case LOG_INFO:
+            return LOG_INFO;
+        case LOG_WARN:
+            return LOG_WARN;
+        case LOG_ERROR:
+            return LOG_ERROR;
+        case LOG_FATAL:
+            return LOG_FATAL;
+        default:
+            return LOG_INFO;
+    }
+}
+
+unsigned int NormalizeLogDomain(uint32_t domain)
+{
+    return domain <= 0xFFFF ? domain : DEFAULT_LOG_DOMAIN;
+}
+
+const char* SafeString(const char* value, const char* fallback)
+{
+    return value != nullptr && value[0] != '\0' ? value : fallback;
+}
+
+} // namespace
+
+extern "C" int cargo_ohos_app_hilog(uint32_t level, uint32_t domain, const char* tag, const char* message)
+{
+    return OH_LOG_Print(
+        LOG_APP,
+        NormalizeLogLevel(level),
+        NormalizeLogDomain(domain),
+        SafeString(tag, DEFAULT_LOG_TAG),
+        "%{public}s",
+        SafeString(message, ""));
 }
 
 static napi_value GetMessage(napi_env env, napi_callback_info info)
