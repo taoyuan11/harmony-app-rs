@@ -1,3 +1,4 @@
+import common from '@ohos.app.ability.common';
 import bridge from 'libentry.so';
 
 const runtimeBridge = bridge ?? {
