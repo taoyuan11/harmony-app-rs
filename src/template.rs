@@ -462,7 +462,8 @@ export default class EntryAbility extends UIAbility {
     ),
     (
         "entry/src/main/ets/pages/Index.ets",
-        r#"import bridge from 'libentry.so';
+        r#"import common from '@ohos.app.ability.common';
+import bridge from 'libentry.so';
 
 const runtimeBridge = bridge ?? {
   getMessage: (): string => 'Native bridge is unavailable.',
@@ -694,15 +695,14 @@ export default class EntryAbility extends UIAbility {
     ),
     (
         "entry/src/main/ets/pages/Index.ets",
-        r#"import bridge from 'libentry.so';
+        r#"import common from '@ohos.app.ability.common';
+import bridge from 'libentry.so';
 
 @Entry
 @Component
 struct Index {
   aboutToAppear(): void {
-    const hostContext = this.getUIContext().getHostContext() as
-      | { config?: { fontSizeScale?: number } }
-      | undefined;
+    const hostContext = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
     const fontScale = hostContext?.config?.fontSizeScale;
     bridge.setFontScale(
       typeof fontScale === 'number' && Number.isFinite(fontScale) && fontScale > 0 ? fontScale : 1.0
