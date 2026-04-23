@@ -421,10 +421,17 @@ export default {
         r#"import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import bridge from 'libentry.so';
 
-const DOMAIN = 0x0000;
+const DOMAIN = 0x3433;
 
 export default class EntryAbility extends UIAbility {
+  private mainWindow?: window.Window;
+
+  private readonly onSystemDensityChange = (density: number): void => {
+    bridge.setScaleFactor(this.normalizeDensityScale(density));
+  };
+
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, 'cargo-ohos-app', '%{public}s', 'Ability onCreate');
   }
@@ -432,6 +439,9 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     try {
       const mainWindow = windowStage.getMainWindowSync();
+      this.mainWindow = mainWindow;
+      this.syncDensityScale(mainWindow);
+      mainWindow.on('systemDensityChange', this.onSystemDensityChange);
       mainWindow.setWindowLayoutFullScreen(true)
         .then(() => mainWindow.setWindowSystemBarEnable([]))
         .catch((err: Error) => {
@@ -457,6 +467,50 @@ export default class EntryAbility extends UIAbility {
       }
     });
   }
+
+  onWindowStageDestroy(): void {
+    if (this.mainWindow !== undefined) {
+      try {
+        this.mainWindow.off('systemDensityChange', this.onSystemDensityChange);
+      } catch (err) {
+        hilog.error(
+          DOMAIN,
+          'cargo-ohos-app',
+          'Failed to unregister density listener: %{public}s',
+          JSON.stringify(err)
+        );
+      }
+      this.mainWindow = undefined;
+    }
+  }
+
+  private syncDensityScale(mainWindow: window.Window): void {
+    try {
+      const densityInfo = mainWindow.getWindowDensityInfo();
+      bridge.setScaleFactor(
+        this.normalizeDensityScale(
+          densityInfo.customDensity > 0
+            ? densityInfo.customDensity
+            : (densityInfo.systemDensity > 0 ? densityInfo.systemDensity : densityInfo.defaultDensity)
+        )
+      );
+    } catch (err) {
+      hilog.error(
+        DOMAIN,
+        'cargo-ohos-app',
+        'Failed to read window density: %{public}s',
+        JSON.stringify(err)
+      );
+      bridge.setScaleFactor(1.0);
+    }
+  }
+
+  private normalizeDensityScale(density: number): number {
+    if (typeof density === 'number' && Number.isFinite(density) && density > 0) {
+      return density;
+    }
+    return 1.0;
+  }
 }
 "#,
     ),
@@ -475,6 +529,14 @@ const runtimeBridge = bridge ?? {
 struct Index {
   @State message: string = runtimeBridge.getMessage();
   @State counter: number = 0;
+
+  aboutToAppear(): void {
+    const hostContext = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+    const fontScale = hostContext?.config?.fontSizeScale;
+    bridge.setFontScale(
+      typeof fontScale === 'number' && Number.isFinite(fontScale) && fontScale > 0 ? fontScale : 1.0
+    );
+  }
 
   build() {
     Column({ space: 16 }) {
@@ -582,6 +644,8 @@ target_link_libraries(entry PUBLIC libace_napi.z.so rust_bridge ${HILOG_LIB})
 #include <napi/native_api.h>
 #include <stdint.h>
 
+#include <cmath>
+
 extern "C" {
 const char* ohos_app_get_message();
 uint32_t ohos_app_increment_counter();
@@ -591,6 +655,8 @@ namespace {
 
 constexpr unsigned int DEFAULT_LOG_DOMAIN = 0x3433;
 constexpr const char* DEFAULT_LOG_TAG = "rust";
+double g_density_scale = 1.0;
+double g_font_scale = 1.0;
 
 LogLevel NormalizeLogLevel(uint32_t level)
 {
@@ -620,6 +686,14 @@ const char* SafeString(const char* value, const char* fallback)
     return value != nullptr && value[0] != '\0' ? value : fallback;
 }
 
+double NormalizePositiveValue(double value)
+{
+    if (std::isfinite(value) && value > 0.0) {
+        return value;
+    }
+    return 1.0;
+}
+
 } // namespace
 
 extern "C" int cargo_ohos_app_hilog(uint32_t level, uint32_t domain, const char* tag, const char* message)
@@ -631,6 +705,16 @@ extern "C" int cargo_ohos_app_hilog(uint32_t level, uint32_t domain, const char*
         SafeString(tag, DEFAULT_LOG_TAG),
         "%{public}s",
         SafeString(message, ""));
+}
+
+extern "C" double cargo_ohos_app_density_scale()
+{
+    return g_density_scale;
+}
+
+extern "C" double cargo_ohos_app_font_scale()
+{
+    return g_font_scale;
 }
 
 static napi_value GetMessage(napi_env env, napi_callback_info info)
@@ -648,11 +732,53 @@ static napi_value IncrementCounter(napi_env env, napi_callback_info info)
     return result;
 }
 
+static napi_value SetScaleFactor(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc != 1) {
+        return nullptr;
+    }
+
+    double scaleFactor = 1.0;
+    if (napi_get_value_double(env, args[0], &scaleFactor) != napi_ok) {
+        return nullptr;
+    }
+
+    g_density_scale = NormalizePositiveValue(scaleFactor);
+
+    napi_value result = nullptr;
+    napi_get_undefined(env, &result);
+    return result;
+}
+
+static napi_value SetFontScale(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc != 1) {
+        return nullptr;
+    }
+
+    double fontScale = 1.0;
+    if (napi_get_value_double(env, args[0], &fontScale) != napi_ok) {
+        return nullptr;
+    }
+
+    g_font_scale = NormalizePositiveValue(fontScale);
+
+    napi_value result = nullptr;
+    napi_get_undefined(env, &result);
+    return result;
+}
+
 static napi_value Init(napi_env env, napi_value exports)
 {
     napi_property_descriptor descriptors[] = {
         { "getMessage", nullptr, GetMessage, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "incrementCounter", nullptr, IncrementCounter, nullptr, nullptr, nullptr, napi_default, nullptr }
+        { "incrementCounter", nullptr, IncrementCounter, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setScaleFactor", nullptr, SetScaleFactor, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setFontScale", nullptr, SetFontScale, nullptr, nullptr, nullptr, napi_default, nullptr }
     };
     napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
     return exports;
@@ -679,6 +805,8 @@ extern "C" __attribute__((constructor)) void RegisterCargoOhosAppModule(void)
         r#"declare const bridge: {
   getMessage(): string;
   incrementCounter(): number;
+  setScaleFactor(scaleFactor: number): void;
+  setFontScale(fontScale: number): void;
 };
 
 export default bridge;
@@ -705,7 +833,6 @@ import { window } from '@kit.ArkUI';
 import bridge from 'libentry.so';
 
 const DOMAIN = 0x3433;
-const BASE_DENSITY = 160.0;
 
 export default class EntryAbility extends UIAbility {
   private mainWindow?: window.Window;
@@ -789,7 +916,7 @@ export default class EntryAbility extends UIAbility {
 
   private normalizeDensityScale(density: number): number {
     if (typeof density === 'number' && Number.isFinite(density) && density > 0) {
-      return density / BASE_DENSITY;
+      return density;
     }
     return 1.0;
   }
@@ -1297,6 +1424,16 @@ extern "C" int cargo_ohos_app_hilog(uint32_t level, uint32_t domain, const char*
         SafeString(message, ""));
 }
 
+extern "C" double cargo_ohos_app_density_scale()
+{
+    return g_scale_factor;
+}
+
+extern "C" double cargo_ohos_app_font_scale()
+{
+    return g_font_scale;
+}
+
 napi_value SetFontScale(napi_env env, napi_callback_info info)
 {
     size_t argc = 1;
@@ -1470,6 +1607,21 @@ mod tests {
         assert!(app_json.contents.contains("\"versionCode\": 42"));
         assert!(app_json.contents.contains("\"versionName\": \"1.2.3\""));
 
+        let page = files
+            .iter()
+            .find(|file| file.relative_path == "entry/src/main/ets/pages/Index.ets")
+            .unwrap();
+        assert!(page.contents.contains("fontSizeScale"));
+        assert!(page.contents.contains("bridge.setFontScale"));
+
+        let ability = files
+            .iter()
+            .find(|file| file.relative_path == "entry/src/main/ets/entryability/EntryAbility.ets")
+            .unwrap();
+        assert!(ability.contents.contains("bridge.setScaleFactor"));
+        assert!(ability.contents.contains("systemDensityChange"));
+        assert!(ability.contents.contains("return density;"));
+
         let cmake = files
             .iter()
             .find(|file| file.relative_path == "entry/src/main/cpp/CMakeLists.txt")
@@ -1482,6 +1634,10 @@ mod tests {
             .unwrap();
         assert!(bridge.contents.contains("#include <hilog/log.h>"));
         assert!(bridge.contents.contains("cargo_ohos_app_hilog"));
+        assert!(bridge.contents.contains("cargo_ohos_app_density_scale"));
+        assert!(bridge.contents.contains("cargo_ohos_app_font_scale"));
+        assert!(bridge.contents.contains("SetScaleFactor"));
+        assert!(bridge.contents.contains("SetFontScale"));
         assert!(bridge.contents.contains("OH_LOG_Print"));
     }
 
@@ -1520,6 +1676,7 @@ mod tests {
         assert!(ability.contents.contains("setWindowSystemBarEnable([])"));
         assert!(ability.contents.contains("bridge.setScaleFactor"));
         assert!(ability.contents.contains("systemDensityChange"));
+        assert!(ability.contents.contains("return density;"));
 
         let bridge = files
             .iter()
@@ -1530,10 +1687,16 @@ mod tests {
         assert!(bridge.contents.contains("double font_scale"));
         assert!(bridge.contents.contains("#include <hilog/log.h>"));
         assert!(bridge.contents.contains("cargo_ohos_app_hilog"));
+        assert!(bridge.contents.contains("cargo_ohos_app_density_scale"));
+        assert!(bridge.contents.contains("cargo_ohos_app_font_scale"));
         assert!(bridge.contents.contains("PrintRustLog"));
         assert!(bridge.contents.contains("ohos_winit_runtime_log"));
         assert!(bridge.contents.contains("SetScaleFactor"));
-        assert!(bridge.contents.contains("g_scale_factor = NormalizePositiveValue(scaleFactor)"));
+        assert!(
+            bridge
+                .contents
+                .contains("g_scale_factor = NormalizePositiveValue(scaleFactor)")
+        );
         assert!(bridge.contents.contains("SetFontScale"));
         assert!(
             bridge

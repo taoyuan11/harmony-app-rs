@@ -2,6 +2,8 @@
 #include <napi/native_api.h>
 #include <stdint.h>
 
+#include <cmath>
+
 extern "C" {
 const char* ohos_app_get_message();
 uint32_t ohos_app_increment_counter();
@@ -11,6 +13,8 @@ namespace {
 
 constexpr unsigned int DEFAULT_LOG_DOMAIN = 0x3433;
 constexpr const char* DEFAULT_LOG_TAG = "rust";
+double g_density_scale = 1.0;
+double g_font_scale = 1.0;
 
 LogLevel NormalizeLogLevel(uint32_t level)
 {
@@ -40,6 +44,14 @@ const char* SafeString(const char* value, const char* fallback)
     return value != nullptr && value[0] != '\0' ? value : fallback;
 }
 
+double NormalizePositiveValue(double value)
+{
+    if (std::isfinite(value) && value > 0.0) {
+        return value;
+    }
+    return 1.0;
+}
+
 } // namespace
 
 extern "C" int cargo_ohos_app_hilog(uint32_t level, uint32_t domain, const char* tag, const char* message)
@@ -51,6 +63,16 @@ extern "C" int cargo_ohos_app_hilog(uint32_t level, uint32_t domain, const char*
         SafeString(tag, DEFAULT_LOG_TAG),
         "%{public}s",
         SafeString(message, ""));
+}
+
+extern "C" double cargo_ohos_app_density_scale()
+{
+    return g_density_scale;
+}
+
+extern "C" double cargo_ohos_app_font_scale()
+{
+    return g_font_scale;
 }
 
 static napi_value GetMessage(napi_env env, napi_callback_info info)
@@ -68,11 +90,53 @@ static napi_value IncrementCounter(napi_env env, napi_callback_info info)
     return result;
 }
 
+static napi_value SetScaleFactor(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc != 1) {
+        return nullptr;
+    }
+
+    double scaleFactor = 1.0;
+    if (napi_get_value_double(env, args[0], &scaleFactor) != napi_ok) {
+        return nullptr;
+    }
+
+    g_density_scale = NormalizePositiveValue(scaleFactor);
+
+    napi_value result = nullptr;
+    napi_get_undefined(env, &result);
+    return result;
+}
+
+static napi_value SetFontScale(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1] = { nullptr };
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc != 1) {
+        return nullptr;
+    }
+
+    double fontScale = 1.0;
+    if (napi_get_value_double(env, args[0], &fontScale) != napi_ok) {
+        return nullptr;
+    }
+
+    g_font_scale = NormalizePositiveValue(fontScale);
+
+    napi_value result = nullptr;
+    napi_get_undefined(env, &result);
+    return result;
+}
+
 static napi_value Init(napi_env env, napi_value exports)
 {
     napi_property_descriptor descriptors[] = {
         { "getMessage", nullptr, GetMessage, nullptr, nullptr, nullptr, napi_default, nullptr },
-        { "incrementCounter", nullptr, IncrementCounter, nullptr, nullptr, nullptr, napi_default, nullptr }
+        { "incrementCounter", nullptr, IncrementCounter, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setScaleFactor", nullptr, SetScaleFactor, nullptr, nullptr, nullptr, napi_default, nullptr },
+        { "setFontScale", nullptr, SetFontScale, nullptr, nullptr, nullptr, napi_default, nullptr }
     };
     napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
     return exports;

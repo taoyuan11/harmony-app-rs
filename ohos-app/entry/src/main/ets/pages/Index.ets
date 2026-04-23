@@ -12,6 +12,14 @@ struct Index {
   @State message: string = runtimeBridge.getMessage();
   @State counter: number = 0;
 
+  aboutToAppear(): void {
+    const hostContext = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+    const fontScale = hostContext?.config?.fontSizeScale;
+    bridge.setFontScale(
+      typeof fontScale === 'number' && Number.isFinite(fontScale) && fontScale > 0 ? fontScale : 1.0
+    );
+  }
+
   build() {
     Column({ space: 16 }) {
       Text('Rust -> OHOS')
